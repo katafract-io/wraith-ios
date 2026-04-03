@@ -1,0 +1,34 @@
+# Xcode
+*.xcuserstate
+*.xcscmblueprint
+xcuserdata/
+*.moved-aside
+*.pbxuser
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Build
+build/
+Products/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods (if ever added)
+Pods/
+Podfile.lock
+
+# Secrets / certs — never commit
+*.p12
+*.cer
+*.mobileprovision
+*.p8
+ExportOptions.plist
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  WireGuardTunnel.entitlements
+  Network Extension target — com.katafract.vpn.tunnel
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>packet-tunnel-provider</string>
+    </array>
+
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)com.katafract.vpn</string>
+        <string>$(AppIdentifierPrefix)com.katafract.vpn.tunnel</string>
+    </array>
+
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.katafract.vpn</string>
+    </array>
+</dict>
+</plist>
