@@ -279,7 +279,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: KFSpacing.md) {
             sectionHeader("Support")
 
-            Link(destination: URL(string: "https://katafract.com/privacy")!) {
+            Link(destination: URL(string: "https://katafract.com/privacy/wraith")!) {
                 SettingsRow(icon: "hand.raised.fill", label: "Privacy Policy") {
                     Image(systemName: "arrow.up.right.square")
                         .font(.system(size: 14))
@@ -289,7 +289,7 @@ struct SettingsView: View {
 
             Divider().background(Color.kfBorder)
 
-            Link(destination: URL(string: "https://katafract.com/terms")!) {
+            Link(destination: URL(string: "https://katafract.com/terms/wraith")!) {
                 SettingsRow(icon: "doc.text.fill", label: "Terms of Service") {
                     Image(systemName: "arrow.up.right.square")
                         .font(.system(size: 14))

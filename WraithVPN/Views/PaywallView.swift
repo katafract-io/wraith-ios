@@ -319,10 +319,10 @@ private struct ProductOptionView: View {
         product.id == WraithProduct.armorAnnual.rawValue ? "per year" : "per month"
     }
 
-    /// Rough monthly equivalent for the annual plan (hardcoded to match spec)
     private var monthlyEquivalent: String? {
         guard product.id == WraithProduct.armorAnnual.rawValue else { return nil }
-        return "$3.33"
+        let monthly = product.price / 12
+        return monthly.formatted(product.priceFormatStyle)
     }
 }
 

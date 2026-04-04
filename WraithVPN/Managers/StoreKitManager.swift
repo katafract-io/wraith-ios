@@ -15,8 +15,8 @@ import Combine
 // MARK: - Product IDs
 
 enum WraithProduct: String, CaseIterable {
-    case armorMonthly = "com.katafract.wraith_armor_monthly"
-    case armorAnnual  = "com.katafract.wraith_armor_annual"
+    case armorMonthly = "com.katafract.wraith.monthly"
+    case armorAnnual  = "com.katafract.wraith.annual"
 
     var displayName: String {
         switch self {

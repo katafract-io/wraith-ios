@@ -60,7 +60,7 @@ enum RegionInfo {
         "eu-west":      ("Frankfurt",  "🇩🇪"),
         "eu-north":     ("Helsinki",   "🇫🇮"),
         "ap-southeast": ("Singapore",  "🇸🇬"),
-        "us-central":   ("Missouri",   "🇺🇸"),
+        "us-central":   ("US Central", "🇺🇸"),
     ]
 
     static func cityName(for region: String) -> String {
@@ -202,7 +202,7 @@ struct SubscriptionInfo: Equatable {
 
     var planDisplayName: String {
         switch plan {
-        case "vpn_armor_monthly": return "WraithVPN (Monthly)"
+        case "vpn_armor":         return "WraithVPN (Monthly)"
         case "vpn_armor_annual":  return "WraithVPN (Annual)"
         default:                  return plan
         }

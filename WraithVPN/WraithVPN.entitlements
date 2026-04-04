@@ -32,8 +32,8 @@
     <!-- ===== In-App Purchase ===== -->
     <key>com.apple.developer.in-app-payments</key>
     <array>
-        <string>com.katafract.wraith_armor_monthly</string>
-        <string>com.katafract.wraith_armor_annual</string>
+        <string>com.katafract.wraith.monthly</string>
+        <string>com.katafract.wraith.annual</string>
     </array>
 
     <!-- ===== Keychain sharing ===== -->
