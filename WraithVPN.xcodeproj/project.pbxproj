@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 60;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -38,6 +38,41 @@
 			proxyType = 1;
 			remoteGlobalIDString = AATGT002;
 			remoteInfo = WireGuardTunnel;
+		};
+		BC9FECEA2F80E5150020F723 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 6FF4AC14211EC46F002C96EB;
+			remoteInfo = WireGuardiOS;
+		};
+		BC9FECEC2F80E5150020F723 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 6F5D0C1A218352EF000F85AD;
+			remoteInfo = WireGuardNetworkExtensioniOS;
+		};
+		BC9FECEE2F80E5150020F723 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 6FB1BD5D21D2607A00A991BF;
+			remoteInfo = WireGuardmacOS;
+		};
+		BC9FECF02F80E5150020F723 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 6FB1BD9121D4BFE600A991BF;
+			remoteInfo = WireGuardNetworkExtensionmacOS;
+		};
+		BC9FECF22F80E5150020F723 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */;
+			proxyType = 2;
+			remoteGlobalIDString = 6F70E22922106A2D008BDFB4;
+			remoteInfo = WireGuardmacOSLoginItemHelper;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -81,6 +116,7 @@
 		AA100033 /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
 		AAPROD001 /* WraithVPN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WraithVPN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AAPROD002 /* WireGuardTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WireGuardTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = WireGuard.xcodeproj; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -113,6 +149,7 @@
 				AAGRP005 /* WireGuardTunnel */,
 				AAGRP009 /* Frameworks */,
 				AAGRP010 /* Products */,
+				BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */,
 			);
 			sourceTree = "<group>";
 		};
@@ -201,6 +238,18 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		BC9FECE12F80E5140020F723 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BC9FECEB2F80E5150020F723 /* WireGuard.app */,
+				BC9FECED2F80E5150020F723 /* WireGuardNetworkExtension.appex */,
+				BC9FECEF2F80E5150020F723 /* WireGuard.app */,
+				BC9FECF12F80E5150020F723 /* WireGuardNetworkExtension.appex */,
+				BC9FECF32F80E5150020F723 /* WireGuardLoginItemHelper.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -266,8 +315,17 @@
 				Base,
 			);
 			mainGroup = AAGRP000;
+			packageReferences = (
+				BC8F55772F80E2F4009FC332 /* XCLocalSwiftPackageReference "wireguard-apple" */,
+			);
 			productRefGroup = AAGRP010 /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = BC9FECE12F80E5140020F723 /* Products */;
+					ProjectRef = BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				AATGT001 /* WraithVPN */,
@@ -275,6 +333,44 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXReferenceProxy section */
+		BC9FECEB2F80E5150020F723 /* WireGuard.app */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.application;
+			path = WireGuard.app;
+			remoteRef = BC9FECEA2F80E5150020F723 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		BC9FECED2F80E5150020F723 /* WireGuardNetworkExtension.appex */ = {
+			isa = PBXReferenceProxy;
+			fileType = "wrapper.app-extension";
+			path = WireGuardNetworkExtension.appex;
+			remoteRef = BC9FECEC2F80E5150020F723 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		BC9FECEF2F80E5150020F723 /* WireGuard.app */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.application;
+			path = WireGuard.app;
+			remoteRef = BC9FECEE2F80E5150020F723 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		BC9FECF12F80E5150020F723 /* WireGuardNetworkExtension.appex */ = {
+			isa = PBXReferenceProxy;
+			fileType = "wrapper.app-extension";
+			path = WireGuardNetworkExtension.appex;
+			remoteRef = BC9FECF02F80E5150020F723 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		BC9FECF32F80E5150020F723 /* WireGuardLoginItemHelper.app */ = {
+			isa = PBXReferenceProxy;
+			fileType = wrapper.application;
+			path = WireGuardLoginItemHelper.app;
+			remoteRef = BC9FECF22F80E5150020F723 /* PBXContainerItemProxy */;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXReferenceProxy section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AARES001 /* Resources */ = {
@@ -441,7 +537,7 @@
 				CODE_SIGN_ENTITLEMENTS = WraithVPN/WraithVPN.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WraithVPN/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -468,7 +564,7 @@
 				CODE_SIGN_ENTITLEMENTS = WraithVPN/WraithVPN.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WraithVPN/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -493,7 +589,7 @@
 				CODE_SIGN_ENTITLEMENTS = WireGuardTunnel/WireGuardTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				INFOPLIST_FILE = WireGuardTunnel/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -516,7 +612,7 @@
 				CODE_SIGN_ENTITLEMENTS = WireGuardTunnel/WireGuardTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				INFOPLIST_FILE = WireGuardTunnel/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -564,6 +660,13 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		BC8F55772F80E2F4009FC332 /* XCLocalSwiftPackageReference "wireguard-apple" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "wireguard-apple";
+		};
+/* End XCLocalSwiftPackageReference section */
 	};
 	rootObject = AAPROJ001 /* Project object */;
 }

@@ -1,38 +1,22 @@
 // PacketTunnelProvider.swift
-// WireGuardTunnel (Network Extension target)
+// WireGuardTunnel
 //
-// This is the out-of-process tunnel provider that actually handles WireGuard
-// packet routing. It runs as a separate process with elevated NetworkExtension
-// privileges, sandboxed away from the main app.
-//
-// Integration path:
-//   - The main app writes the WireGuard INI config into the shared App Group
-//     container before starting the tunnel.
-//   - This provider reads the config, hands it to WireGuardKit, and manages
-//     the tun interface.
-//
-// DEPENDENCY: Add WireGuardKit via Swift Package Manager:
-//   URL: https://github.com/WireGuard/wireguard-apple
-//   Package: WireGuardKit
-//
-// The tunnel target's bundle ID must be: com.katafract.wraith.tunnel
-// and its entitlements must include packet-tunnel-provider + the same
-// keychain-access-groups and app-group as the main target.
+// NetworkExtension packet tunnel provider that boots the WireGuard backend
+// using a wg-quick style configuration string supplied by the main app.
 
 import NetworkExtension
+import WireGuardKit
 import os.log
-
-// NOTE: Uncomment after adding WireGuardKit SPM dependency:
-// import WireGuardKit
 
 private let log = Logger(subsystem: "com.katafract.wraith.tunnel", category: "PacketTunnelProvider")
 
-class PacketTunnelProvider: NEPacketTunnelProvider {
+final class PacketTunnelProvider: NEPacketTunnelProvider {
 
-    // MARK: - WireGuardKit adapter
-    // private var adapter: WireGuardAdapter?
-
-    // MARK: - Tunnel lifecycle
+    private lazy var adapter: WireGuardAdapter = {
+        WireGuardAdapter(with: self) { logLevel, message in
+            log.log(level: logLevel.osLogType, "\(message, privacy: .public)")
+        }
+    }()
 
     override func startTunnel(
         options: [String: NSObject]?,
@@ -43,41 +27,37 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         guard let proto = protocolConfiguration as? NETunnelProviderProtocol,
               let providerConfig = proto.providerConfiguration,
               let wgConfig = providerConfig["wgConfig"] as? String else {
-            let err = TunnelError.missingConfiguration
-            log.error("Missing WireGuard config: \(err.localizedDescription)")
-            completionHandler(err)
+            let error = TunnelError.missingConfiguration
+            log.error("Missing WireGuard config")
+            completionHandler(error)
             return
         }
 
-        log.info("WireGuard config received, length=\(wgConfig.count) chars")
+        let tunnelConfiguration: TunnelConfiguration
+        do {
+            tunnelConfiguration = try TunnelConfiguration(fromWgQuickConfig: wgConfig, called: "wraith")
+        } catch {
+            log.error("Failed to parse WireGuard config: \(error.localizedDescription, privacy: .public)")
+            completionHandler(TunnelError.invalidConfiguration)
+            return
+        }
 
-        // ---- WireGuardKit integration (uncomment after adding SPM dep) ----
-        //
-        // let tunnelConfig: TunnelConfiguration
-        // do {
-        //     tunnelConfig = try TunnelConfiguration(fromWgQuickConfig: wgConfig, called: "wraith")
-        // } catch {
-        //     completionHandler(error)
-        //     return
-        // }
-        //
-        // adapter = WireGuardAdapter(with: self) { logLevel, message in
-        //     log.debug("wg[\(logLevel.rawValue)]: \(message)")
-        // }
-        //
-        // adapter?.start(tunnelConfiguration: tunnelConfig) { [weak self] adapterError in
-        //     if let error = adapterError {
-        //         log.error("WireGuard adapter start failed: \(error.localizedDescription)")
-        //         completionHandler(error)
-        //         return
-        //     }
-        //     log.info("WireGuard tunnel started successfully")
-        //     completionHandler(nil)
-        // }
-        // ---- end WireGuardKit block ----
+        adapter.start(tunnelConfiguration: tunnelConfiguration) { [weak self] adapterError in
+            guard let self else {
+                completionHandler(TunnelError.adapterDeallocated)
+                return
+            }
 
-        // Placeholder until WireGuardKit is linked:
-        completionHandler(TunnelError.wireGuardKitNotLinked)
+            guard let adapterError else {
+                let interfaceName = self.adapter.interfaceName ?? "unknown"
+                log.info("WireGuard tunnel started on interface \(interfaceName, privacy: .public)")
+                completionHandler(nil)
+                return
+            }
+
+            log.error("WireGuard adapter start failed: \(String(describing: adapterError), privacy: .public)")
+            completionHandler(adapterError.asTunnelError)
+        }
     }
 
     override func stopTunnel(
@@ -86,33 +66,80 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
     ) {
         log.info("stopTunnel called, reason=\(reason.rawValue)")
 
-        // adapter?.stop { completionHandler() }
-
-        // Placeholder:
-        completionHandler()
+        adapter.stop { adapterError in
+            if let adapterError {
+                log.error("Failed to stop WireGuard adapter: \(String(describing: adapterError), privacy: .public)")
+            }
+            completionHandler()
+        }
     }
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
-        // Can be used to request runtime stats from the tunnel (bytes in/out, handshake time).
-        // adapter?.getRuntimeConfiguration { config in
-        //     completionHandler?(config?.utf8Data)
-        // }
-        completionHandler?(nil)
+        guard let completionHandler else { return }
+
+        if messageData.count == 1, messageData[0] == 0 {
+            adapter.getRuntimeConfiguration { config in
+                completionHandler(config?.data(using: .utf8))
+            }
+        } else {
+            completionHandler(nil)
+        }
     }
 }
 
-// MARK: - Errors
-
 enum TunnelError: LocalizedError {
     case missingConfiguration
-    case wireGuardKitNotLinked
+    case invalidConfiguration
+    case dnsResolutionFailure
+    case couldNotSetNetworkSettings
+    case couldNotStartBackend
+    case couldNotDetermineFileDescriptor
+    case adapterDeallocated
 
     var errorDescription: String? {
         switch self {
         case .missingConfiguration:
             return "WireGuard configuration missing from provider configuration dictionary."
-        case .wireGuardKitNotLinked:
-            return "WireGuardKit is not yet linked. Add the SPM dependency and uncomment the adapter code."
+        case .invalidConfiguration:
+            return "The saved WireGuard configuration could not be parsed."
+        case .dnsResolutionFailure:
+            return "DNS resolution failed for the WireGuard endpoint."
+        case .couldNotSetNetworkSettings:
+            return "The tunnel network settings could not be applied."
+        case .couldNotStartBackend:
+            return "The WireGuard backend failed to start."
+        case .couldNotDetermineFileDescriptor:
+            return "WireGuard could not determine the tunnel file descriptor."
+        case .adapterDeallocated:
+            return "The WireGuard adapter was released before startup completed."
+        }
+    }
+}
+
+private extension WireGuardAdapterError {
+    var asTunnelError: TunnelError {
+        switch self {
+        case .cannotLocateTunnelFileDescriptor:
+            return .couldNotDetermineFileDescriptor
+        case .dnsResolution:
+            return .dnsResolutionFailure
+        case .setNetworkSettings:
+            return .couldNotSetNetworkSettings
+        case .startWireGuardBackend:
+            return .couldNotStartBackend
+        case .invalidState:
+            return .invalidConfiguration
+        }
+    }
+}
+
+private extension WireGuardLogLevel {
+    var osLogType: OSLogType {
+        switch self {
+        case .verbose:
+            return .debug
+        case .error:
+            return .error
         }
     }
 }
