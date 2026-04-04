@@ -29,13 +29,6 @@
         <string>dns-proxy</string>
     </array>
 
-    <!-- ===== In-App Purchase ===== -->
-    <key>com.apple.developer.in-app-payments</key>
-    <array>
-        <string>com.katafract.wraith.monthly</string>
-        <string>com.katafract.wraith.annual</string>
-    </array>
-
     <!-- ===== Keychain sharing ===== -->
     <!--
       Sharing the keychain group with the tunnel extension lets both
