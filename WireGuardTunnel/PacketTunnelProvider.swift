@@ -6,6 +6,7 @@
 
 import NetworkExtension
 import WireGuardKit
+import WireGuardKitExtensions
 import os.log
 
 private let log = Logger(subsystem: "com.katafract.wraith.tunnel", category: "PacketTunnelProvider")

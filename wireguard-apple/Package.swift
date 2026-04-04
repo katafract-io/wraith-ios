@@ -2,6 +2,10 @@
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
+import Foundation
+
+let goLibDir = URL(fileURLWithPath: #file).deletingLastPathComponent()
+    .appendingPathComponent("Sources/WireGuardKitGo/prebuilt").path
 
 let package = Package(
     name: "WireGuardKit",
@@ -10,7 +14,8 @@ let package = Package(
         .iOS(.v15)
     ],
     products: [
-        .library(name: "WireGuardKit", targets: ["WireGuardKit"])
+        .library(name: "WireGuardKit", targets: ["WireGuardKit"]),
+        .library(name: "WireGuardKitExtensions", targets: ["WireGuardKitExtensions"])
     ],
     dependencies: [],
     targets: [
@@ -24,6 +29,15 @@ let package = Package(
             publicHeadersPath: "."
         ),
         .target(
+            name: "WireGuardKitExtensions",
+            dependencies: ["WireGuardKit"],
+            path: "Sources/Shared/Model",
+            sources: [
+                "TunnelConfiguration+WgQuickConfig.swift",
+                "String+ArrayConversion.swift"
+            ]
+        ),
+        .target(
             name: "WireGuardKitGo",
             dependencies: [],
             exclude: [
@@ -34,7 +48,10 @@ let package = Package(
                 "Makefile"
             ],
             publicHeadersPath: ".",
-            linkerSettings: [.linkedLibrary("wg-go")]
+            linkerSettings: [
+                .linkedLibrary("wg-go"),
+                .unsafeFlags(["-L\(goLibDir)"])
+            ]
         )
     ]
 )
