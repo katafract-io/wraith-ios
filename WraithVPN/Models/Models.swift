@@ -156,13 +156,25 @@ struct AppleTokenRequest: Encodable {
 
 struct TokenResponse: Decodable {
     let token: String
-    let expiresAt: String
+    let expiresAt: String  // stored as ISO8601 string in Keychain
     let plan: String
 
     enum CodingKeys: String, CodingKey {
         case token
         case expiresAt = "expires_at"
         case plan
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        token = try c.decode(String.self, forKey: .token)
+        plan  = try c.decode(String.self, forKey: .plan)
+        // Backend returns expires_at as either a Unix timestamp (Int) or ISO8601 string
+        if let ts = try? c.decode(Int.self, forKey: .expiresAt) {
+            expiresAt = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
+        } else {
+            expiresAt = try c.decode(String.self, forKey: .expiresAt)
+        }
     }
 }
 
