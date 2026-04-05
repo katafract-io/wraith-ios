@@ -119,15 +119,13 @@ final class APIClient {
         transactionId: String,
         originalTransactionId: String,
         productId: String,
-        bundleId: String,
-        jwsTransaction: String
+        bundleId: String
     ) async throws -> TokenResponse {
         let body = AppleTokenRequest(
             transactionId: transactionId,
             originalTransactionId: originalTransactionId,
             productId: productId,
-            bundleId: bundleId,
-            jwsTransaction: jwsTransaction
+            bundleId: bundleId
         )
         return try await request(APIRequest(.POST, "/v1/token/validate/apple", body: body))
     }

@@ -148,8 +148,7 @@ final class StoreKitManager: ObservableObject {
                 transactionId:         String(transaction.id),
                 originalTransactionId: String(transaction.originalID),
                 productId:             transaction.productID,
-                bundleId:              bundleId,
-                jwsTransaction:        transaction.jwsRepresentation
+                bundleId:              bundleId
             )
             try persistToken(tokenResp)
             await loadSubscriptionState()
