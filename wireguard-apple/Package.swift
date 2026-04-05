@@ -1,6 +1,4 @@
 // swift-tools-version:5.5
-// The swift-tools-version declares the minimum version of Swift required to build this package.
-
 import PackageDescription
 
 let package = Package(
@@ -10,10 +8,8 @@ let package = Package(
         .iOS(.v15)
     ],
     products: [
-        .library(name: "WireGuardKit", targets: ["WireGuardKit"]),
-        .library(name: "WireGuardKitExtensions", targets: ["WireGuardKitExtensions"])
+        .library(name: "WireGuardKit", targets: ["WireGuardKit"])
     ],
-    dependencies: [],
     targets: [
         .target(
             name: "WireGuardKit",
@@ -24,18 +20,9 @@ let package = Package(
             dependencies: [],
             publicHeadersPath: "."
         ),
-        .target(
-            name: "WireGuardKitExtensions",
-            dependencies: ["WireGuardKit"],
-            path: "Sources/Shared/Model",
-            sources: [
-                "TunnelConfiguration+WgQuickConfig.swift",
-                "String+ArrayConversion.swift"
-            ]
-        ),
         .binaryTarget(
             name: "WireGuardKitGo",
-            path: "Sources/WireGuardKitGo/WireGuardKitGo.xcframework"
+            path: "Frameworks/WireGuardKitGo.xcframework"
         )
     ]
 )

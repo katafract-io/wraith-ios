@@ -23,13 +23,14 @@
 		AA000014 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100014 /* DesignSystem.swift */; };
 		AA000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA100015 /* Assets.xcassets */; };
 		AA000020 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100020 /* PacketTunnelProvider.swift */; };
+		AA000021 /* TunnelConfiguration+WgQuickConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100022 /* TunnelConfiguration+WgQuickConfig.swift */; };
+		AA000022 /* String+ArrayConversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100023 /* String+ArrayConversion.swift */; };
 		AA000030 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100030 /* NetworkExtension.framework */; };
 		AA000031 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100031 /* StoreKit.framework */; };
 		AA000032 /* CryptoKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100032 /* CryptoKit.framework */; };
 		AA000033 /* Network.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100033 /* Network.framework */; };
 		AA000034 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100030 /* NetworkExtension.framework */; };
 		AA000035 /* WireGuardKit in Frameworks */ = {isa = PBXBuildFile; productRef = BCWGPROD001 /* WireGuardKit */; };
-		AA000036 /* WireGuardKitExtensions in Frameworks */ = {isa = PBXBuildFile; productRef = BCWGPROD002 /* WireGuardKitExtensions */; };
 		AACOPYREF001 /* WireGuardTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AAPROD002 /* WireGuardTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -111,6 +112,8 @@
 		AA100016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA100017 /* WraithVPN.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WraithVPN.entitlements; sourceTree = "<group>"; };
 		AA100020 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
+		AA100022 /* TunnelConfiguration+WgQuickConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TunnelConfiguration+WgQuickConfig.swift"; sourceTree = "<group>"; };
+		AA100023 /* String+ArrayConversion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "String+ArrayConversion.swift"; sourceTree = "<group>"; };
 		AA100021 /* WireGuardTunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WireGuardTunnel.entitlements; sourceTree = "<group>"; };
 		AA100030 /* NetworkExtension.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NetworkExtension.framework; path = System/Library/Frameworks/NetworkExtension.framework; sourceTree = SDKROOT; };
 		AA100031 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
@@ -139,7 +142,6 @@
 			files = (
 				AA000034 /* NetworkExtension.framework in Frameworks */,
 				AA000035 /* WireGuardKit in Frameworks */,
-				AA000036 /* WireGuardKitExtensions in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -217,6 +219,8 @@
 			isa = PBXGroup;
 			children = (
 				AA100020 /* PacketTunnelProvider.swift */,
+				AA100022 /* TunnelConfiguration+WgQuickConfig.swift */,
+				AA100023 /* String+ArrayConversion.swift */,
 				AA100021 /* WireGuardTunnel.entitlements */,
 			);
 			path = WireGuardTunnel;
@@ -290,7 +294,6 @@
 			name = WireGuardTunnel;
 			packageProductDependencies = (
 				BCWGPROD001 /* WireGuardKit */,
-				BCWGPROD002 /* WireGuardKitExtensions */,
 			);
 			productName = WireGuardTunnel;
 			productReference = AAPROD002 /* WireGuardTunnel.appex */;
@@ -418,6 +421,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA000020 /* PacketTunnelProvider.swift in Sources */,
+				AA000021 /* TunnelConfiguration+WgQuickConfig.swift in Sources */,
+				AA000022 /* String+ArrayConversion.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -681,11 +686,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BC8F55772F80E2F4009FC332 /* XCLocalSwiftPackageReference "wireguard-apple" */;
 			productName = WireGuardKit;
-		};
-		BCWGPROD002 /* WireGuardKitExtensions */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = BC8F55772F80E2F4009FC332 /* XCLocalSwiftPackageReference "wireguard-apple" */;
-			productName = WireGuardKitExtensions;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

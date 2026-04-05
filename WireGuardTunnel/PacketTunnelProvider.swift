@@ -6,7 +6,6 @@
 
 import NetworkExtension
 import WireGuardKit
-import WireGuardKitExtensions
 import os.log
 
 private let log = Logger(subsystem: "com.katafract.wraith.tunnel", category: "PacketTunnelProvider")
@@ -36,7 +35,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
         let tunnelConfiguration: TunnelConfiguration
         do {
-            tunnelConfiguration = try TunnelConfiguration(fromWgQuickConfig: wgConfig, called: "wraith")
+            tunnelConfiguration = try TunnelConfiguration.makeWraithConfiguration(from: wgConfig, name: "wraith")
         } catch {
             log.error("Failed to parse WireGuard config: \(error.localizedDescription, privacy: .public)")
             completionHandler(TunnelError.invalidConfiguration)
@@ -85,6 +84,172 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         } else {
             completionHandler(nil)
         }
+    }
+}
+
+private extension TunnelConfiguration {
+    static func makeWraithConfiguration(from wgQuickConfig: String, name: String) throws -> TunnelConfiguration {
+        enum Section {
+            case none
+            case interface
+            case peer
+        }
+
+        var interfaceConfiguration: InterfaceConfiguration?
+        var peerConfigurations = [PeerConfiguration]()
+        var section = Section.none
+        var attributes = [String: String]()
+
+        func commitCurrentSection() throws {
+            switch section {
+            case .none:
+                return
+            case .interface:
+                guard interfaceConfiguration == nil else {
+                    throw TunnelError.invalidConfiguration
+                }
+                interfaceConfiguration = try makeInterfaceConfiguration(from: attributes)
+            case .peer:
+                peerConfigurations.append(try makePeerConfiguration(from: attributes))
+            }
+        }
+
+        for rawLine in wgQuickConfig.split(whereSeparator: \.isNewline) {
+            let uncommentedLine = rawLine.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false).first ?? ""
+            let line = uncommentedLine.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if line.isEmpty {
+                continue
+            }
+
+            let normalizedLine = line.lowercased()
+            if normalizedLine == "[interface]" || normalizedLine == "[peer]" {
+                try commitCurrentSection()
+                attributes.removeAll()
+                section = normalizedLine == "[interface]" ? .interface : .peer
+                continue
+            }
+
+            guard let equalsIndex = line.firstIndex(of: "=") else {
+                throw TunnelError.invalidConfiguration
+            }
+
+            let key = line[..<equalsIndex].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let value = line[line.index(after: equalsIndex)...].trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if let existingValue = attributes[key], ["address", "allowedips", "dns"].contains(key) {
+                attributes[key] = existingValue + "," + value
+            } else if attributes[key] == nil {
+                attributes[key] = value
+            } else {
+                throw TunnelError.invalidConfiguration
+            }
+        }
+
+        try commitCurrentSection()
+
+        guard let interfaceConfiguration else {
+            throw TunnelError.invalidConfiguration
+        }
+
+        return TunnelConfiguration(name: name, interface: interfaceConfiguration, peers: peerConfigurations)
+    }
+
+    static func makeInterfaceConfiguration(from attributes: [String: String]) throws -> InterfaceConfiguration {
+        guard let privateKeyString = attributes["privatekey"],
+              let privateKey = PrivateKey(base64Key: privateKeyString) else {
+            throw TunnelError.invalidConfiguration
+        }
+
+        var interface = InterfaceConfiguration(privateKey: privateKey)
+
+        if let listenPortString = attributes["listenport"] {
+            guard let listenPort = UInt16(listenPortString) else {
+                throw TunnelError.invalidConfiguration
+            }
+            interface.listenPort = listenPort
+        }
+
+        if let addressesString = attributes["address"] {
+            interface.addresses = try parseRanges(addressesString)
+        }
+
+        if let dnsString = attributes["dns"] {
+            var dnsServers = [DNSServer]()
+            var dnsSearch = [String]()
+
+            for value in splitCSV(dnsString) {
+                if let dnsServer = DNSServer(from: value) {
+                    dnsServers.append(dnsServer)
+                } else {
+                    dnsSearch.append(value)
+                }
+            }
+
+            interface.dns = dnsServers
+            interface.dnsSearch = dnsSearch
+        }
+
+        if let mtuString = attributes["mtu"] {
+            guard let mtu = UInt16(mtuString) else {
+                throw TunnelError.invalidConfiguration
+            }
+            interface.mtu = mtu
+        }
+
+        return interface
+    }
+
+    static func makePeerConfiguration(from attributes: [String: String]) throws -> PeerConfiguration {
+        guard let publicKeyString = attributes["publickey"],
+              let publicKey = PublicKey(base64Key: publicKeyString) else {
+            throw TunnelError.invalidConfiguration
+        }
+
+        var peer = PeerConfiguration(publicKey: publicKey)
+
+        if let preSharedKeyString = attributes["presharedkey"] {
+            guard let preSharedKey = PreSharedKey(base64Key: preSharedKeyString) else {
+                throw TunnelError.invalidConfiguration
+            }
+            peer.preSharedKey = preSharedKey
+        }
+
+        if let allowedIPsString = attributes["allowedips"] {
+            peer.allowedIPs = try parseRanges(allowedIPsString)
+        }
+
+        if let endpointString = attributes["endpoint"] {
+            guard let endpoint = Endpoint(from: endpointString) else {
+                throw TunnelError.invalidConfiguration
+            }
+            peer.endpoint = endpoint
+        }
+
+        if let keepAliveString = attributes["persistentkeepalive"] {
+            guard let keepAlive = UInt16(keepAliveString) else {
+                throw TunnelError.invalidConfiguration
+            }
+            peer.persistentKeepAlive = keepAlive
+        }
+
+        return peer
+    }
+
+    static func parseRanges(_ value: String) throws -> [IPAddressRange] {
+        try splitCSV(value).map { item in
+            guard let range = IPAddressRange(from: item) else {
+                throw TunnelError.invalidConfiguration
+            }
+            return range
+        }
+    }
+
+    static func splitCSV(_ value: String) -> [String] {
+        value
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 }
 
