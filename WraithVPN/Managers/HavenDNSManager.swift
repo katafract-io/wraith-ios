@@ -21,7 +21,7 @@ final class HavenDNSManager: ObservableObject {
 
     // MARK: - Private
 
-    private let dohURL = "https://haven.katafract.com/dns-query"
+    private let dohURL = "https://dns.katafract.com/dns-query"
     private let profileDescription = "Haven DNS — Ad & tracker blocking by WraithVPN"
 
     // MARK: - Init
