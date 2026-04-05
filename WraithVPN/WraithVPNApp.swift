@@ -15,6 +15,7 @@ struct WraithVPNApp: App {
     @StateObject private var storeKit = StoreKitManager()
     @StateObject private var vpn      = WireGuardManager()
     @StateObject private var servers  = ServerListManager()
+    @StateObject private var haven    = HavenDNSManager()
 
     // MARK: - Scene
 
@@ -24,6 +25,7 @@ struct WraithVPNApp: App {
                 .environmentObject(storeKit)
                 .environmentObject(vpn)
                 .environmentObject(servers)
+                .environmentObject(haven)
                 // Force dark colour scheme app-wide; individual screens can override.
                 .preferredColorScheme(.dark)
         }

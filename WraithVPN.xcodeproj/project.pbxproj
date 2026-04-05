@@ -22,6 +22,7 @@
 		AA000013 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100013 /* KeychainHelper.swift */; };
 		AA000014 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100014 /* DesignSystem.swift */; };
 		AA000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA100015 /* Assets.xcassets */; };
+		AA000016 /* HavenDNSManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100018 /* HavenDNSManager.swift */; };
 		AA000020 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100020 /* PacketTunnelProvider.swift */; };
 		AA000021 /* TunnelConfiguration+WgQuickConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100022 /* TunnelConfiguration+WgQuickConfig.swift */; };
 		AA000022 /* String+ArrayConversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100023 /* String+ArrayConversion.swift */; };
@@ -109,6 +110,7 @@
 		AA100013 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		AA100014 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		AA100015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AA100018 /* HavenDNSManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenDNSManager.swift; sourceTree = "<group>"; };
 		AA100016 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA100017 /* WraithVPN.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WraithVPN.entitlements; sourceTree = "<group>"; };
 		AA100020 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
@@ -194,6 +196,7 @@
 				AA100010 /* WireGuardManager.swift */,
 				AA100011 /* StoreKitManager.swift */,
 				AA100012 /* ServerListManager.swift */,
+				AA100018 /* HavenDNSManager.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -413,6 +416,7 @@
 				AA000012 /* ServerListManager.swift in Sources */,
 				AA000013 /* KeychainHelper.swift in Sources */,
 				AA000014 /* DesignSystem.swift in Sources */,
+				AA000016 /* HavenDNSManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

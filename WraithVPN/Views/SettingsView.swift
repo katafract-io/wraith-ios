@@ -11,6 +11,7 @@ struct SettingsView: View {
 
     @EnvironmentObject var storeKit: StoreKitManager
     @EnvironmentObject var vpn:      WireGuardManager
+    @EnvironmentObject var haven:    HavenDNSManager
     @AppStorage("hasUnlockedFreeTier") private var hasUnlockedFreeTier = false
 
     @State private var showSignOutAlert    = false
@@ -28,6 +29,7 @@ struct SettingsView: View {
                 VStack(spacing: KFSpacing.lg) {
                     overviewCard
                     accountCard
+                    havenDNSCard
                     connectionCard
                     subscriptionCard
                     supportCard
@@ -234,6 +236,54 @@ struct SettingsView: View {
         .kfCard()
     }
 
+    // MARK: - Haven DNS card
+
+    private var havenDNSCard: some View {
+        VStack(alignment: .leading, spacing: KFSpacing.md) {
+            sectionHeader("Haven DNS")
+
+            HStack(spacing: KFSpacing.sm) {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 18))
+                    .foregroundStyle(haven.isEnabled ? Color.kfConnected : Color.kfTextMuted)
+                    .frame(width: 36)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Ad & Tracker Blocking")
+                        .font(KFFont.body(15))
+                        .foregroundStyle(.white)
+                    Text(haven.isEnabled ? "Active — DNS routed through WraithGate" : "Routes DNS through Katafract nodes to block ads and trackers. Free.")
+                        .font(KFFont.caption(13))
+                        .foregroundStyle(Color.kfTextSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                if haven.isLoading {
+                    ProgressView()
+                        .tint(Color.kfAccentBlue)
+                } else {
+                    Toggle("", isOn: Binding(
+                        get: { haven.isEnabled },
+                        set: { _ in Task { await haven.toggle() } }
+                    ))
+                    .labelsHidden()
+                    .tint(Color.kfAccentBlue)
+                }
+            }
+
+            if let err = haven.error {
+                Text(err)
+                    .font(KFFont.caption(12))
+                    .foregroundStyle(Color.kfError)
+            }
+        }
+        .padding(KFSpacing.md)
+        .kfCard()
+        .task { await haven.refreshStatus() }
+    }
+
     // MARK: - Subscription management card
 
     private var subscriptionCard: some View {
@@ -415,5 +465,6 @@ struct SettingsRow<Trailing: View>: View {
         SettingsView()
             .environmentObject(StoreKitManager())
             .environmentObject(WireGuardManager())
+            .environmentObject(HavenDNSManager())
     }
 }

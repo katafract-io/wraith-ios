@@ -27,6 +27,7 @@
         <string>app-proxy-provider</string>
         <string>content-filter-provider</string>
         <string>dns-proxy</string>
+        <string>dns-settings</string>
     </array>
 
     <!-- ===== Keychain sharing ===== -->

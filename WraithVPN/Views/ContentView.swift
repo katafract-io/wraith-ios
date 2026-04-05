@@ -15,6 +15,7 @@ struct ContentView: View {
     @EnvironmentObject var storeKit:  StoreKitManager
     @EnvironmentObject var vpn:       WireGuardManager
     @EnvironmentObject var servers:   ServerListManager
+    @EnvironmentObject var haven:     HavenDNSManager
 
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
     @AppStorage("hasUnlockedFreeTier") private var hasUnlockedFreeTier = false
@@ -39,6 +40,7 @@ struct ContentView: View {
                         withAnimation(.easeInOut(duration: 0.35)) {
                             hasUnlockedFreeTier = true
                         }
+                        Task { await haven.enable() }
                     }
                         .environmentObject(storeKit)
                 }
@@ -71,6 +73,7 @@ struct ContentView: View {
                         SettingsView()
                             .environmentObject(storeKit)
                             .environmentObject(vpn)
+                            .environmentObject(haven)
                     default:
                         EmptyView()
                     }
