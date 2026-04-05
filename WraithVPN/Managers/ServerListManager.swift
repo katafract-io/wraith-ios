@@ -117,7 +117,7 @@ final class ServerListManager: ObservableObject {
             let finishLock = NSLock()
             var timeout: DispatchWorkItem?
 
-            func finish(with result: Double?) {
+            @Sendable func finish(with result: Double?) {
                 finishLock.lock()
                 defer { finishLock.unlock() }
 
