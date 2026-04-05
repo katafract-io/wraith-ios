@@ -57,6 +57,15 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.4), value: hasSeenOnboarding)
         .animation(.easeInOut(duration: 0.35), value: storeKit.hasPurchased)
         .animation(.easeInOut(duration: 0.35), value: hasUnlockedFreeTier)
+        .task {
+            // Auto-provision on launch if token exists but no peer installed
+            await vpn.autoProvisionIfNeeded()
+        }
+        .onChange(of: storeKit.hasPurchased) { _, purchased in
+            if purchased {
+                Task { await vpn.autoProvisionIfNeeded() }
+            }
+        }
     }
 
     // MARK: - Main app shell

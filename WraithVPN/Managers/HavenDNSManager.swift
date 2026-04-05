@@ -41,14 +41,25 @@ final class HavenDNSManager: ObservableObject {
             let manager = NEDNSSettingsManager.shared()
             try await manager.loadFromPreferences()
 
-            let settings = NEDNSOverHTTPSSettings(servers: [dohURL])
+            // If profile is installed but deactivated (e.g. device set back to Automatic),
+            // remove it first so iOS re-activates on the next save.
+            if manager.dnsSettings != nil && !manager.isEnabled {
+                try await manager.removeFromPreferences()
+                try await manager.loadFromPreferences()
+            }
+
+            let settings = NEDNSOverHTTPSSettings(servers: [])
+            settings.serverURL = URL(string: dohURL)
             manager.dnsSettings = settings
             manager.localizedDescription = profileDescription
 
             try await manager.saveToPreferences()
-            await refreshStatus()
+            // Set optimistically — the immediate loadFromPreferences round-trip can
+            // return stale state before iOS has fully activated the profile.
+            isEnabled = true
         } catch {
             self.error = "Could not enable Haven DNS: \(error.localizedDescription)"
+            await refreshStatus()
         }
     }
 

@@ -63,6 +63,12 @@
         </dict>
     </dict>
 
+    <!-- Encryption compliance — WireGuard uses non-exempt algorithms (ChaCha20/Curve25519).
+         Setting this key stops Xcode Cloud from pausing for the compliance question each build.
+         App Store Connect may request ERN documentation during review if set to YES. -->
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
+
     <!-- SwiftUI lifecycle -->
     <key>UIApplicationSceneManifest</key>
     <dict>

@@ -37,6 +37,11 @@ final class KeychainHelper {
         case activePeerId       = "com.katafract.wraith.activePeerId"
         case tokenExpiresAt     = "com.katafract.wraith.tokenExpiresAt"
         case tokenPlan          = "com.katafract.wraith.tokenPlan"
+        case wgConfig           = "com.katafract.wraith.wgConfig"
+        case wgPeerId           = "com.katafract.wraith.wgPeerId"
+        case wgNodeId           = "com.katafract.wraith.wgNodeId"
+        case wgAssignedIP       = "com.katafract.wraith.wgAssignedIP"
+        case activeNodeId       = "com.katafract.wraith.activeNodeId"
     }
 
     // MARK: - String convenience

@@ -8,6 +8,7 @@ struct TokenEntryView: View {
     @State private var tokenInput      = ""
     @State private var isValidating    = false
     @State private var validationError: String? = nil
+    @State private var statusMessage: String? = nil
 
     var body: some View {
         VStack(spacing: 16) {
@@ -25,9 +26,23 @@ struct TokenEntryView: View {
                 .onSubmit { Task { await validate() } }
 
             if let err = validationError {
-                Text(err)
+                ScrollView {
+                    Text(err)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 80)
+                .padding(8)
+                .background(Color.red.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            }
+
+            if let msg = statusMessage {
+                Text(msg)
                     .font(.system(size: 10))
-                    .foregroundStyle(.red)
+                    .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -81,7 +96,14 @@ struct TokenEntryView: View {
             }
         }
         .padding(20)
-        .frame(width: 340)
+        .frame(minWidth: 340, maxWidth: 520)
+        .onAppear {
+            // Bring window to front and keep it above other windows
+            NSApp.activate(ignoringOtherApps: true)
+            DispatchQueue.main.async {
+                NSApp.windows.first(where: { $0.title == "Activate Wraith" })?.level = .floating
+            }
+        }
     }
 
     private func validate() async {
@@ -90,17 +112,34 @@ struct TokenEntryView: View {
 
         isValidating = true
         validationError = nil
+        statusMessage = nil
         defer { isValidating = false }
 
         do {
+            // 1. Validate token
+            statusMessage = "Validating token…"
             let info = try await APIClient.shared.validateToken(token)
-            try KeychainHelper.shared.save(token,          for: .subscriptionToken)
-            try KeychainHelper.shared.save(info.expiresAt, for: .tokenExpiresAt)
-            try KeychainHelper.shared.save(info.plan,      for: .tokenPlan)
-            await storeKit.restorePurchases()
+            try KeychainHelper.shared.save(token,     for: .subscriptionToken)
+            try KeychainHelper.shared.save(info.plan, for: .tokenPlan)
+            if let exp = info.expiresAt {
+                try KeychainHelper.shared.save(exp, for: .tokenExpiresAt)
+            }
+
+            // 2. Provision a peer for this Mac
+            statusMessage = "Provisioning VPN peer…"
+            let provision = try await APIClient.shared.provisionPeer(
+                pubkey: "",
+                region: nil,
+                label:  "Mac — \(Host.current().localizedName ?? "Desktop")"
+            )
+            try VPNConfigManager.shared.store(response: provision)
+
+            await storeKit.reloadFromKeychain()
+            statusMessage = nil
             dismiss()
         } catch {
-            validationError = "Invalid token: \(error.localizedDescription)"
+            statusMessage = nil
+            validationError = error.localizedDescription
         }
     }
 }

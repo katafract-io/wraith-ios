@@ -15,6 +15,7 @@ struct PaywallView: View {
     var onContinueFree: (() -> Void)? = nil
 
     @State private var selectedProductId: String = WraithProduct.armorAnnual.rawValue
+    @State private var showTokenEntry = false
 
     // MARK: - Body
 
@@ -210,11 +211,23 @@ struct PaywallView: View {
 
     private var legalFooter: some View {
         VStack(spacing: KFSpacing.xs) {
-            Button("Restore Purchase") {
-                Task { await storeKit.restorePurchases() }
+            HStack(spacing: KFSpacing.lg) {
+                Button("Restore Purchase") {
+                    Task { await storeKit.restorePurchases() }
+                }
+                .font(KFFont.caption(13))
+                .foregroundStyle(Color.kfAccentBlue)
+
+                Button("Have a token?") {
+                    showTokenEntry = true
+                }
+                .font(KFFont.caption(13))
+                .foregroundStyle(Color.kfAccentBlue)
             }
-            .font(KFFont.caption(13))
-            .foregroundStyle(Color.kfAccentBlue)
+            .sheet(isPresented: $showTokenEntry) {
+                TokenActivationSheet()
+                    .environmentObject(storeKit)
+            }
 
             Text("Payment will be charged to your Apple ID account at confirmation of purchase. Subscriptions automatically renew unless cancelled at least 24 hours before the end of the current period. You can manage and cancel your subscription in your App Store account settings.")
                 .font(KFFont.caption(11))

@@ -314,12 +314,18 @@ struct ConnectView: View {
             do {
                 if vpn.status == .connected {
                     vpn.disconnect()
+                } else if vpn.isProvisioned,
+                          let selected = servers.selectedServer,
+                          selected.nodeId == vpn.connectedServer?.nodeId {
+                    // Same server already provisioned — just start the tunnel.
+                    try vpn.connect()
+                } else if let server = servers.selectedServer {
+                    // No profile yet — provision to selected server
+                    try await vpn.connectToServer(server)
                 } else {
-                    if let server = servers.selectedServer {
-                        try await vpn.connectToServer(server)
-                    } else {
-                        try vpn.connect()
-                    }
+                    // Fallback: provision to nearest
+                    let nearest = try await APIClient.shared.fetchNearestServer()
+                    try await vpn.connectToServer(nearest)
                 }
             } catch {
                 errorMessage = error.localizedDescription
@@ -358,6 +364,9 @@ struct ConnectView: View {
     }
 
     private var statusCaption: String {
+        if vpn.isAutoProvisioning {
+            return "Setting up your secure route…"
+        }
         switch vpn.status {
         case .connected:
             return "Traffic is flowing through the Enclave."
@@ -368,7 +377,9 @@ struct ConnectView: View {
         case .failed(let message):
             return message
         default:
-            return "Ready to secure your connection."
+            return vpn.isProvisioned
+                ? "Ready to secure your connection."
+                : "Tap connect to set up your route."
         }
     }
 }

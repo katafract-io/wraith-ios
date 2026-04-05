@@ -110,7 +110,7 @@ final class APIClient {
 
     /// Validates an existing subscription token and returns its info.
     /// Used on macOS to activate via a token from connect.katafract.com or iOS.
-    func validateToken(_ token: String) async throws -> TokenResponse {
+    func validateToken(_ token: String) async throws -> TokenInfoResponse {
         return try await request(APIRequest(.GET, "/v1/token/info", auth: false, extraHeaders: ["Authorization": "Bearer \(token)"]))
     }
 
@@ -119,13 +119,15 @@ final class APIClient {
         transactionId: String,
         originalTransactionId: String,
         productId: String,
-        bundleId: String
+        bundleId: String,
+        jwsTransaction: String
     ) async throws -> TokenResponse {
         let body = AppleTokenRequest(
             transactionId: transactionId,
             originalTransactionId: originalTransactionId,
             productId: productId,
-            bundleId: bundleId
+            bundleId: bundleId,
+            jwsTransaction: jwsTransaction
         )
         return try await request(APIRequest(.POST, "/v1/token/validate/apple", body: body))
     }

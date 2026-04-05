@@ -49,7 +49,7 @@ final class StoreKitManager: ObservableObject {
     init() {
         transactionListener = listenForTransactions()
         Task {
-            await loadSubscriptionState()
+            await reloadFromKeychain()
             await fetchProducts()
         }
     }
@@ -85,8 +85,9 @@ final class StoreKitManager: ObservableObject {
 
             switch result {
             case .success(let verification):
+                let jws = verification.jwsRepresentation
                 let transaction = try checkVerified(verification)
-                await handleTransaction(transaction)
+                await handleTransaction(transaction, jwsRepresentation: jws)
                 await transaction.finish()
 
             case .userCancelled:
@@ -110,13 +111,12 @@ final class StoreKitManager: ObservableObject {
         defer { isLoading = false }
         purchaseError = nil
 
-        // AppStore.sync() re-processes all entitlements
         do {
             try await AppStore.sync()
-            await loadSubscriptionState()
         } catch {
             purchaseError = "Restore failed: \(error.localizedDescription)"
         }
+        await reloadFromKeychain()
     }
 
     // MARK: - Sign-out / revoke
@@ -125,6 +125,7 @@ final class StoreKitManager: ObservableObject {
         KeychainHelper.shared.delete(for: .subscriptionToken)
         KeychainHelper.shared.delete(for: .tokenExpiresAt)
         KeychainHelper.shared.delete(for: .tokenPlan)
+        UserDefaults.standard.removeObject(forKey: "hasUnlockedFreeTier")
         subscription = nil
         hasPurchased = false
     }
@@ -142,16 +143,17 @@ final class StoreKitManager: ObservableObject {
     }
 
     /// Called for every verified transaction — exchanges it for a backend token.
-    private func handleTransaction(_ transaction: Transaction) async {
+    private func handleTransaction(_ transaction: Transaction, jwsRepresentation: String) async {
         do {
             let tokenResp = try await APIClient.shared.validateApplePurchase(
                 transactionId:         String(transaction.id),
                 originalTransactionId: String(transaction.originalID),
                 productId:             transaction.productID,
-                bundleId:              bundleId
+                bundleId:              bundleId,
+                jwsTransaction:        jwsRepresentation
             )
             try persistToken(tokenResp)
-            await loadSubscriptionState()
+            await reloadFromKeychain()
         } catch {
             purchaseError = "Could not activate subscription: \(error.localizedDescription)"
         }
@@ -164,7 +166,7 @@ final class StoreKitManager: ObservableObject {
     }
 
     /// Reads stored token from Keychain and populates `subscription`.
-    private func loadSubscriptionState() async {
+    func reloadFromKeychain() async {
         guard let token   = KeychainHelper.shared.readOptional(for: .subscriptionToken),
               let plan     = KeychainHelper.shared.readOptional(for: .tokenPlan) else {
             // No stored token — check StoreKit entitlements anyway
@@ -186,8 +188,9 @@ final class StoreKitManager: ObservableObject {
     /// Walk current entitlements and process any unfinished transactions.
     private func checkCurrentEntitlements() async {
         for await result in Transaction.currentEntitlements {
+            let jws = result.jwsRepresentation
             guard let transaction = try? checkVerified(result) else { continue }
-            await handleTransaction(transaction)
+            await handleTransaction(transaction, jwsRepresentation: jws)
             await transaction.finish()
         }
     }
@@ -199,8 +202,9 @@ final class StoreKitManager: ObservableObject {
             for await result in Transaction.updates {
                 guard let self else { break }
                 do {
+                    let jws = result.jwsRepresentation
                     let transaction = try await self.checkVerified(result)
-                    await self.handleTransaction(transaction)
+                    await self.handleTransaction(transaction, jwsRepresentation: jws)
                     await transaction.finish()
                 } catch {
                     // Verification failed — ignore this transaction

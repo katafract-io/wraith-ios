@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var showRevokeAlert     = false
     @State private var showRegenerateAlert = false
     @State private var isRestoring         = false
+    @State private var showTokenEntry      = false
 
     // MARK: - Body
 
@@ -222,6 +223,24 @@ struct SettingsView: View {
 
             Divider().background(Color.kfBorder)
 
+            VStack(alignment: .leading, spacing: 4) {
+                SettingsRow(icon: "arrow.trianglehead.2.clockwise.rotate.90", label: "Auto-connect") {
+                    Toggle("", isOn: Binding(
+                        get: { vpn.autoConnectEnabled },
+                        set: { enabled in Task { await vpn.setAutoConnect(enabled) } }
+                    ))
+                    .labelsHidden()
+                    .tint(Color.kfAccentBlue)
+                }
+                Text("Reconnects automatically on network changes and after reboot. Disconnecting manually always overrides this until you reconnect.")
+                    .font(KFFont.caption(11))
+                    .foregroundStyle(Color.kfTextMuted)
+                    .padding(.leading, 36)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Divider().background(Color.kfBorder)
+
             Button {
                 showRevokeAlert = true
             } label: {
@@ -318,6 +337,20 @@ struct SettingsView: View {
                 }
             }
             .disabled(isRestoring)
+
+            Divider().background(Color.kfBorder)
+
+            Button { showTokenEntry = true } label: {
+                SettingsRow(icon: "key.fill", label: "Activate with Token") {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.kfTextMuted)
+                }
+            }
+            .sheet(isPresented: $showTokenEntry) {
+                TokenActivationSheet()
+                    .environmentObject(storeKit)
+            }
         }
         .padding(KFSpacing.md)
         .kfCard()
