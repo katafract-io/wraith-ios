@@ -51,7 +51,6 @@ struct ConnectView: View {
         .preferredColorScheme(.dark)
         .task {
             await servers.refresh()
-            await servers.preselectNearest()
         }
     }
 

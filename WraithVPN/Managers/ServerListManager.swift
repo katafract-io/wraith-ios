@@ -45,18 +45,6 @@ final class ServerListManager: ObservableObject {
         }
     }
 
-    /// Fetches nearest server and pre-selects it without blocking the full list.
-    func preselectNearest() async {
-        do {
-            let nearest = try await APIClient.shared.fetchNearestServer()
-            if selectedServer == nil {
-                selectedServer = nearest
-            }
-        } catch {
-            // Non-fatal — server list still works
-        }
-    }
-
     func selectServer(_ server: VPNServer) {
         selectedServer = server
     }
@@ -89,6 +77,12 @@ final class ServerListManager: ObservableObject {
                 case (nil, .some):     return false
                 case (nil, nil):       return false
                 }
+            }
+
+            // Auto-select the fastest measured server if nothing is picked yet.
+            // This overrides GeoIP-based pre-selection with real RTT.
+            if selectedServer == nil, let fastest = servers.first(where: { $0.milliseconds != nil }) {
+                selectedServer = fastest.server
             }
         }
     }
