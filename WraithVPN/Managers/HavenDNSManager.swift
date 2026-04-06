@@ -32,6 +32,16 @@ final class HavenDNSManager: ObservableObject {
 
     init() {
         Task { await refreshStatus() }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(serverDidChange),
+            name: .vpnServerDidChange,
+            object: nil
+        )
+    }
+
+    @objc private func serverDidChange() {
+        Task { await loadPreferences() }
     }
 
     // MARK: - Public

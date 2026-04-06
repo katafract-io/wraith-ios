@@ -40,7 +40,7 @@ final class WireGuardManager: ObservableObject {
     /// still routes through WireGuard but iOS can fall back if the tunnel drops.
     @Published var tunnelMode: TunnelMode = TunnelMode(
         rawValue: UserDefaults.standard.string(forKey: "tunnelMode") ?? ""
-    ) ?? .standard
+    ) ?? .full
     /// Public exit IP of the connected server (set on provision, cleared on disconnect).
     @Published var exitIP: String? = nil
     /// Timestamp of when the tunnel last transitioned to .connected.
@@ -111,13 +111,21 @@ final class WireGuardManager: ObservableObject {
         Task { await applyOnDemand(false) }
     }
 
-    /// Persists the tunnel mode and reconnects if currently connected to apply it.
+    /// Persists the tunnel mode. If connected, reinstalls the existing profile with the
+    /// updated includeAllNetworks flag and restarts the tunnel — no re-provisioning needed.
     func setTunnelMode(_ mode: TunnelMode) async {
         tunnelMode = mode
         UserDefaults.standard.set(mode.rawValue, forKey: "tunnelMode")
-        if status == .connected, let server = connectedServer {
-            try? await connectToServer(server)
-        }
+        guard status == .connected,
+              let mgr = manager,
+              let proto = mgr.protocolConfiguration as? NETunnelProviderProtocol,
+              let configText = proto.providerConfiguration?["wgConfig"] as? String,
+              let server = connectedServer else { return }
+        status = .connecting
+        mgr.connection.stopVPNTunnel()
+        try? await Task.sleep(for: .milliseconds(600))
+        try? await installProfile(configText: configText, server: server)
+        try? startTunnel()
     }
 
     /// Persists the auto-connect preference and updates the live NE profile.
@@ -190,6 +198,7 @@ final class WireGuardManager: ObservableObject {
         exitIP          = server.ipv4.isEmpty ? nil : server.ipv4
         connectedServer = server
         isProvisioned   = true
+        NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
         try? KeychainHelper.shared.save(provision.peerId,  for: .activePeerId)
         try? KeychainHelper.shared.save(server.nodeId,     for: .activeNodeId)
         if let ip = provision.assignedIpv4.isEmpty ? nil : Optional(provision.assignedIpv4) {
@@ -390,6 +399,12 @@ enum WGError: LocalizedError {
         case .noPrivateKey:            return "WireGuard private key not found in Keychain."
         }
     }
+}
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    static let vpnServerDidChange = Notification.Name("vpnServerDidChange")
 }
 
 // MARK: - UIDevice shim for macOS Catalyst
