@@ -478,18 +478,25 @@ struct AchievementsResponse: Codable {
 // MARK: - Platform Status (GET /v1/status)
 
 struct PlatformStatus: Codable {
-    let status: String        // "healthy" | "degraded" | "down"
     let totalNodes: Int
     let healthyNodes: Int
     let degradedNodes: Int
     let uptimePct: Double
+    private let rawStatus: String?
 
     enum CodingKeys: String, CodingKey {
-        case status
+        case rawStatus     = "status"
         case totalNodes    = "total_nodes"
         case healthyNodes  = "healthy_nodes"
         case degradedNodes = "degraded_nodes"
         case uptimePct     = "uptime_pct"
+    }
+
+    var status: String {
+        if let s = rawStatus { return s }
+        if healthyNodes == 0 { return "down" }
+        if degradedNodes > 0 { return "degraded" }
+        return "healthy"
     }
 
     var displayStatus: String {

@@ -229,7 +229,7 @@ struct PaywallView: View {
                     .environmentObject(storeKit)
             }
 
-            Text("Keep access to your Apple ID — that's how you recover your subscription. Payment will be charged to your Apple ID at confirmation of purchase. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period.")
+            Text("No account required. App Store subscribers can restore via Apple ID. Token-based subscribers recover using their original token or a registered recovery email. Payment will be charged to your Apple ID at confirmation of purchase. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period.")
                 .font(KFFont.caption(11))
                 .foregroundStyle(Color.kfTextMuted)
                 .multilineTextAlignment(.center)
