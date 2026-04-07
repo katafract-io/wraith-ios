@@ -48,6 +48,7 @@ struct SettingsView: View {
                     accountCard
                     devicesCard
                     havenDNSCard
+                    havenInsightsCard
                     if !simpleMode {
                         connectionCard
                     }
@@ -618,6 +619,40 @@ struct SettingsView: View {
             await haven.refreshStatus()
             await haven.loadPreferences()
         }
+    }
+
+    // MARK: - Haven Insights card
+
+    private var havenInsightsCard: some View {
+        VStack(alignment: .leading, spacing: KFSpacing.md) {
+            sectionHeader("Haven Insights")
+
+            NavigationLink {
+                DnsStatsView()
+                    .environmentObject(haven)
+            } label: {
+                SettingsRow(icon: "chart.bar.fill", label: "Protection Stats") {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.kfTextMuted)
+                }
+            }
+
+            Divider().background(Color.kfBorder)
+
+            NavigationLink {
+                AchievementsView()
+                    .environmentObject(haven)
+            } label: {
+                SettingsRow(icon: "trophy.fill", label: "Achievements") {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.kfTextMuted)
+                }
+            }
+        }
+        .padding(KFSpacing.md)
+        .kfCard()
     }
 
     // MARK: - Subscription management card
