@@ -37,7 +37,7 @@
 		AA000033 /* Network.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100033 /* Network.framework */; };
 		AA000034 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100030 /* NetworkExtension.framework */; };
 		AA000035 /* WireGuardKit in Frameworks */ = {isa = PBXBuildFile; productRef = BCWGPROD001 /* WireGuardKit */; };
-		AACOPYREF001 /* WireGuardTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AAPROD002 /* WireGuardTunnel.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AACOPYREF001 /* WireGuardTunnel.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AAPROD002 /* WireGuardTunnel.appex */; platformFilters = (ios, ); settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		BBMAC050 /* WraithVPNMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC010 /* WraithVPNMacApp.swift */; };
 		BBMAC051 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC011 /* MenuBarView.swift */; };
 		BBMAC052 /* MenuBarLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC012 /* MenuBarLabel.swift */; };
