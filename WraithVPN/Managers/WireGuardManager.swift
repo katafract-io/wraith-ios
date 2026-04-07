@@ -438,7 +438,7 @@ final class WireGuardManager: ObservableObject {
             status = .connecting
             connectedSince = nil
         case .connected:
-            if connectedSince == nil { connectedSince = Date() }
+            if connectedSince == nil { connectedSince = connection.connectedDate ?? Date() }
             status = .connected
         case .reasserting:
             status = .connecting
