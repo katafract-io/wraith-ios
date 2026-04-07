@@ -82,10 +82,23 @@ final class WireGuardManager: ObservableObject {
     }
 
     /// Provisions to a specific server, installs the profile, then connects.
+    /// If a peer already exists on a different node, uses /v1/peers/switch (atomic,
+    /// no extra slot consumed). If the target node is the same, re-provisions idempotently.
     func connectToServer(_ server: VPNServer) async throws {
         await stopAllActiveTunnels()
         status = .connecting
-        try await provisionAndInstall(server: server)
+
+        let existingPeerId = activePeerId ?? KeychainHelper.shared.readOptional(for: .activePeerId)
+        let existingNodeId = connectedServer?.nodeId ?? KeychainHelper.shared.readOptional(for: .activeNodeId)
+
+        if let peerId = existingPeerId,
+           let nodeId = existingNodeId,
+           nodeId != server.nodeId {
+            try await switchAndInstall(fromPeerId: peerId, server: server)
+        } else {
+            try await provisionAndInstall(server: server)
+        }
+
         await applyOnDemand(autoConnectEnabled)
         try startTunnel()
     }
@@ -203,6 +216,32 @@ final class WireGuardManager: ObservableObject {
         try? KeychainHelper.shared.save(server.nodeId,     for: .activeNodeId)
         if let ip = provision.assignedIpv4.isEmpty ? nil : Optional(provision.assignedIpv4) {
             try? KeychainHelper.shared.save(ip, for: .wgAssignedIP)
+        }
+        if let ip = exitIP { try? KeychainHelper.shared.save(ip, for: .wgExitIP) }
+    }
+
+    /// Switches an existing peer to a new server node atomically (no extra slot consumed).
+    private func switchAndInstall(fromPeerId: String, server: VPNServer) async throws {
+        let pubkey    = try ensureKeypair()
+        let label     = "WraithVPN-\(UIDevice.current.name.prefix(20))"
+        let provision = try await APIClient.shared.switchPeer(
+            fromPeerId: fromPeerId,
+            pubkey:     pubkey,
+            region:     server.region,
+            label:      label
+        )
+        let config = try injectPrivateKey(into: provision.config)
+        try await installProfile(configText: config, server: server)
+        activePeerId    = provision.peerId
+        assignedIP      = provision.assignedIpv4
+        exitIP          = server.ipv4.isEmpty ? nil : server.ipv4
+        connectedServer = server
+        isProvisioned   = true
+        NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
+        try? KeychainHelper.shared.save(provision.peerId,  for: .activePeerId)
+        try? KeychainHelper.shared.save(server.nodeId,     for: .activeNodeId)
+        if !provision.assignedIpv4.isEmpty {
+            try? KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
         }
         if let ip = exitIP { try? KeychainHelper.shared.save(ip, for: .wgExitIP) }
     }

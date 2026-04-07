@@ -115,6 +115,20 @@ struct ProvisionResponse: Decodable {
     }
 }
 
+struct SwitchPeerRequest: Encodable {
+    let fromPeerId: String
+    let region: String?
+    let label: String
+    let clientPubkey: String?
+
+    enum CodingKeys: String, CodingKey {
+        case fromPeerId   = "from_peer_id"
+        case region
+        case label
+        case clientPubkey = "client_pubkey"
+    }
+}
+
 // MARK: - Peer list
 
 struct Peer: Codable, Identifiable {

@@ -98,6 +98,13 @@ final class APIClient {
         return try await request(APIRequest(.POST, "/v1/peers/provision", body: body, auth: true))
     }
 
+    /// Atomically revokes an existing peer and provisions a new one on a different node.
+    /// Uses the same device slot — does not consume an additional seat.
+    func switchPeer(fromPeerId: String, pubkey: String, region: String?, label: String) async throws -> ProvisionResponse {
+        let body = SwitchPeerRequest(fromPeerId: fromPeerId, region: region, label: label, clientPubkey: pubkey)
+        return try await request(APIRequest(.POST, "/v1/peers/switch", body: body, auth: true))
+    }
+
     /// Lists all peers provisioned for the current token.
     func fetchPeers() async throws -> PeerListResponse {
         try await request(APIRequest(.GET, "/v1/peers", auth: true))
