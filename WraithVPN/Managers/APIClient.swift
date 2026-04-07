@@ -86,12 +86,12 @@ final class APIClient {
 
     /// Returns the full list of healthy VPN nodes.
     func fetchServers() async throws -> [VPNServer] {
-        try await request(APIRequest(.GET, "/v1/servers"))
+        try await request(APIRequest(.GET, "/v1/servers", auth: true))
     }
 
     /// Returns the single best node for the caller's location.
     func fetchNearestServer() async throws -> VPNServer {
-        try await request(APIRequest(.GET, "/v1/servers/nearest"))
+        try await request(APIRequest(.GET, "/v1/servers/nearest", auth: true))
     }
 
     /// Provisions a new WireGuard peer and returns the full config.
