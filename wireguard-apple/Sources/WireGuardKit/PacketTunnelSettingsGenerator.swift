@@ -118,6 +118,19 @@ class PacketTunnelSettingsGenerator {
 
         let ipv4Settings = NEIPv4Settings(addresses: ipv4Addresses.map { $0.destinationAddress }, subnetMasks: ipv4Addresses.map { $0.destinationSubnetMask })
         ipv4Settings.includedRoutes = ipv4IncludedRoutes
+
+        // Exclude each peer's endpoint IP from the tunnel routes so that WireGuard
+        // handshake UDP packets go directly over the physical interface rather than
+        // being routed back into the tunnel (which would cause a deadlock when the
+        // server's IP falls inside one of the AllowedIPs ranges).
+        let endpointExcludedRoutes: [NEIPv4Route] = tunnelConfiguration.peers.compactMap { peer in
+            guard case .ipv4(let address) = peer.endpoint?.host else { return nil }
+            return NEIPv4Route(destinationAddress: "\(address)", subnetMask: "255.255.255.255")
+        }
+        if !endpointExcludedRoutes.isEmpty {
+            ipv4Settings.excludedRoutes = endpointExcludedRoutes
+        }
+
         networkSettings.ipv4Settings = ipv4Settings
 
         let ipv6Settings = NEIPv6Settings(addresses: ipv6Addresses.map { $0.destinationAddress }, networkPrefixLengths: ipv6Addresses.map { $0.destinationNetworkPrefixLength })
