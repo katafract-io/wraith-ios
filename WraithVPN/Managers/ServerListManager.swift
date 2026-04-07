@@ -102,7 +102,11 @@ final class ServerListManager: ObservableObject {
             port: probePort
         )
         let params = NWParameters.tcp
-        params.prohibitedInterfaceTypes = []
+        // Prohibit VPN/tunnel interfaces (.other) so probes measure RTT from the
+        // user's real connection (WiFi or cellular) — not daisy-chained through the
+        // active VPN exit node. In kill-switch mode the probe may fail (returns nil),
+        // which is shown as "—" and is correct — we can't measure without bypassing.
+        params.prohibitedInterfaceTypes = [.other]
         let connection = NWConnection(to: endpoint, using: params)
 
         return await withCheckedContinuation { continuation in

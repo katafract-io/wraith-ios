@@ -19,6 +19,10 @@ struct SettingsView: View {
     @State private var showRegenerateAlert = false
     @State private var isRestoring         = false
     @State private var showTokenEntry      = false
+    @State private var peerList: PeerListResponse? = nil
+    @State private var isPeerListLoading = false
+    @State private var peerListError: String? = nil
+    @State private var revokingPeerIds: Set<String> = []
 
     // MARK: - Body
 
@@ -30,6 +34,7 @@ struct SettingsView: View {
                 VStack(spacing: KFSpacing.lg) {
                     overviewCard
                     accountCard
+                    devicesCard
                     havenDNSCard
                     connectionCard
                     subscriptionCard
@@ -191,6 +196,159 @@ struct SettingsView: View {
         }
         .padding(KFSpacing.md)
         .kfCard()
+    }
+
+    // MARK: - Devices card
+
+    private var devicesCard: some View {
+        VStack(alignment: .leading, spacing: KFSpacing.md) {
+            HStack {
+                sectionHeader("Devices")
+                Spacer()
+                if isPeerListLoading {
+                    ProgressView().tint(Color.kfAccentBlue).scaleEffect(0.8)
+                }
+            }
+
+            if let list = peerList {
+                // Usage bar
+                HStack(spacing: KFSpacing.xs) {
+                    Text("\(list.used) of \(list.limit) device slots used")
+                        .font(KFFont.body(14))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    if !list.canAdd {
+                        Text("Limit reached")
+                            .font(KFFont.caption(11, weight: .semibold))
+                            .foregroundStyle(Color.kfError)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.kfError.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                }
+
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color.kfBorder)
+                            .frame(height: 6)
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(list.canAdd ? Color.kfAccentBlue : Color.kfError)
+                            .frame(width: geo.size.width * CGFloat(list.used) / CGFloat(max(list.limit, 1)), height: 6)
+                    }
+                }
+                .frame(height: 6)
+
+                if !list.peers.isEmpty {
+                    Divider().background(Color.kfBorder)
+                    ForEach(list.peers) { peer in
+                        peerRow(peer: peer, isActive: peer.peerId == vpn.activePeerId)
+                        if peer.id != list.peers.last?.id {
+                            Divider().background(Color.kfBorder)
+                        }
+                    }
+                }
+
+                if !list.canAdd {
+                    Divider().background(Color.kfBorder)
+                    NavigationLink {
+                        PaywallView().environmentObject(storeKit)
+                    } label: {
+                        SettingsRow(icon: "plus.circle.fill", label: "Add More Devices") {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.kfAccentBlue)
+                        }
+                    }
+                    .foregroundStyle(Color.kfAccentBlue)
+                }
+
+            } else if let err = peerListError {
+                Text(err)
+                    .font(KFFont.caption(12))
+                    .foregroundStyle(Color.kfError)
+            } else {
+                Text("Loading devices…")
+                    .font(KFFont.body(14))
+                    .foregroundStyle(Color.kfTextMuted)
+            }
+        }
+        .padding(KFSpacing.md)
+        .kfCard()
+        .task {
+            await loadPeerList()
+        }
+    }
+
+    private func peerRow(peer: Peer, isActive: Bool) -> some View {
+        HStack(spacing: KFSpacing.sm) {
+            Image(systemName: isActive ? "iphone.radiowaves.left.and.right" : "iphone")
+                .font(.system(size: 15))
+                .foregroundStyle(isActive ? Color.kfConnected : Color.kfTextMuted)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(peer.label.isEmpty ? "Device" : peer.label)
+                        .font(KFFont.body(14))
+                        .foregroundStyle(Color.kfTextPrimary)
+                    if isActive {
+                        Text("This device")
+                            .font(KFFont.caption(10, weight: .semibold))
+                            .foregroundStyle(Color.kfConnected)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.kfConnected.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                }
+                Text(peer.nodeId)
+                    .font(KFFont.mono(11))
+                    .foregroundStyle(Color.kfTextMuted)
+            }
+
+            Spacer()
+
+            if revokingPeerIds.contains(peer.peerId) {
+                ProgressView().tint(Color.kfError).scaleEffect(0.7)
+            } else {
+                Button {
+                    Task { await revokePeer(peer) }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(Color.kfError.opacity(0.7))
+                }
+            }
+        }
+    }
+
+    private func loadPeerList() async {
+        guard storeKit.subscription != nil else { return }
+        isPeerListLoading = true
+        peerListError = nil
+        defer { isPeerListLoading = false }
+        do {
+            peerList = try await APIClient.shared.fetchPeers()
+        } catch {
+            peerListError = "Could not load devices: \(error.localizedDescription)"
+        }
+    }
+
+    private func revokePeer(_ peer: Peer) async {
+        revokingPeerIds.insert(peer.peerId)
+        defer { revokingPeerIds.remove(peer.peerId) }
+        do {
+            try await APIClient.shared.deletePeer(peerId: peer.peerId)
+            // If this was the active peer, also clean up the local VPN state
+            if peer.peerId == vpn.activePeerId {
+                await vpn.revokePeer()
+            }
+            await loadPeerList()
+        } catch {
+            peerListError = "Failed to revoke: \(error.localizedDescription)"
+        }
     }
 
     // MARK: - Connection card
