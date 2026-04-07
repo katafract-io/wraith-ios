@@ -45,7 +45,6 @@ struct HavenDNSSettingsView: View {
         ScrollView {
             VStack(spacing: KFSpacing.lg) {
                 tierBanner(prefs)
-                statsAndAchievementsRow
                 protectionLevelCard(prefs)
                 advancedCard(prefs)
                 if !simpleMode {
@@ -57,58 +56,6 @@ struct HavenDNSSettingsView: View {
     }
 
     // MARK: - Tier banner
-
-    private var statsAndAchievementsRow: some View {
-        HStack(spacing: KFSpacing.sm) {
-            NavigationLink {
-                DnsStatsView()
-            } label: {
-                HStack(spacing: KFSpacing.sm) {
-                    Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(Color.kfAccentBlue)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Protection Stats")
-                            .font(KFFont.body(14))
-                            .foregroundStyle(.white)
-                        Text("Queries, blocks, history")
-                            .font(KFFont.caption(11))
-                            .foregroundStyle(Color.kfTextMuted)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.kfTextMuted)
-                }
-                .padding(KFSpacing.md)
-                .kfCard()
-            }
-
-            NavigationLink {
-                AchievementsView()
-            } label: {
-                HStack(spacing: KFSpacing.sm) {
-                    Image(systemName: "trophy.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(Color(hex: "#eab308"))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Achievements")
-                            .font(KFFont.body(14))
-                            .foregroundStyle(.white)
-                        Text("Streaks & milestones")
-                            .font(KFFont.caption(11))
-                            .foregroundStyle(Color.kfTextMuted)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.kfTextMuted)
-                }
-                .padding(KFSpacing.md)
-                .kfCard()
-            }
-        }
-    }
 
     private func tierBanner(_ prefs: DnsPreferences) -> some View {
         HStack(spacing: KFSpacing.sm) {
