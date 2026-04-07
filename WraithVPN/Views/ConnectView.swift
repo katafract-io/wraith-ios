@@ -354,19 +354,23 @@ struct ConnectView: View {
             do {
                 if vpn.status == .connected {
                     vpn.disconnect()
+                } else if simpleMode {
+                    // Simple mode: always use GeoIP nearest, ignore latency-probe selection.
+                    if vpn.isProvisioned {
+                        try await vpn.connect()
+                    } else {
+                        let nearest = try await APIClient.shared.fetchNearestServer()
+                        try await vpn.connectToServer(nearest)
+                    }
                 } else if vpn.isProvisioned,
                           let selected = servers.selectedServer,
                           selected.nodeId != vpn.connectedServer?.nodeId {
-                    // Different server explicitly selected — re-provision.
                     try await vpn.connectToServer(selected)
                 } else if vpn.isProvisioned {
-                    // Already provisioned (no conflicting selection) — just start.
                     try await vpn.connect()
                 } else if let server = servers.selectedServer {
-                    // Not provisioned, but RTT probe already picked a server.
                     try await vpn.connectToServer(server)
                 } else {
-                    // Fallback: provision to nearest (GeoIP).
                     let nearest = try await APIClient.shared.fetchNearestServer()
                     try await vpn.connectToServer(nearest)
                 }
