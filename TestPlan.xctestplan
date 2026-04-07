@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "C80D7CA5-7845-4812-AC63-8EC4C9ED70A1",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : true
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:WraithVPN.xcodeproj",
+        "identifier" : "AATST001",
+        "name" : "WraithVPNTests"
+      }
+    }
+  ],
+  "version" : 1
+}

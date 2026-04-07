@@ -59,7 +59,7 @@ struct DnsStatsView: View {
                 .font(KFFont.caption(13))
                 .foregroundStyle(Color.kfTextMuted)
 
-            if let since = stats.since {
+            if stats.since != nil {
                 Text("Last 30 days")
                     .font(KFFont.caption(12))
                     .foregroundStyle(Color.kfTextMuted)
