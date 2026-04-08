@@ -45,6 +45,8 @@ final class WireGuardManager: ObservableObject {
     @Published var exitIP: String? = nil
     /// Timestamp of when the tunnel last transitioned to .connected.
     @Published var connectedSince: Date? = nil
+    /// Latest tunnel health report (populated after each connect).
+    @Published var healthReport: TunnelHealthReport? = nil
 
     // MARK: - Private
 
@@ -254,6 +256,56 @@ final class WireGuardManager: ObservableObject {
         status          = .disconnected
     }
 
+    // MARK: - Post-connect health check
+
+    /// Runs DNS + handshake tests after the tunnel reports connected.
+    /// If the tunnel is dead (peer revoked, no handshake), automatically
+    /// re-provisions to the nearest server.
+    private func postConnectHealthCheck() async {
+        // Wait 2 seconds for the WG handshake to complete
+        try? await Task.sleep(for: .milliseconds(2000))
+        guard status == .connected else { return }
+
+        let havenIP: String? = {
+            guard let assigned = assignedIP else { return nil }
+            let parts = assigned.split(separator: ".")
+            guard parts.count == 4 else { return nil }
+            return "\(parts[0]).\(parts[1]).\(parts[2]).1"
+        }()
+
+        let report = await DNSHealthCheck.shared.runHealthCheck(
+            havenDNSIP: havenIP,
+            connection: tunnelProviderSession
+        )
+        healthReport = report
+
+        if report.needsReprovision {
+            DebugLogger.shared.wg("Health check FAILED: tunnel dead. Auto-reprovisioning...")
+            // Tear down the dead tunnel and re-provision
+            manager?.connection.stopVPNTunnel()
+            try? await Task.sleep(for: .milliseconds(500))
+
+            // Clear stale peer info
+            KeychainHelper.shared.delete(for: .activePeerId)
+            KeychainHelper.shared.delete(for: .activeNodeId)
+            activePeerId = nil
+            connectedServer = nil
+            isProvisioned = false
+
+            do {
+                let nearest = try await APIClient.shared.fetchNearestServer()
+                try await provisionAndInstall(server: nearest)
+                await applyOnDemand(autoConnectEnabled)
+                try? await manager?.loadFromPreferences()
+                try startTunnel()
+                DebugLogger.shared.wg("Auto-reprovision complete. Tunnel restarted.")
+            } catch {
+                DebugLogger.shared.wg("Auto-reprovision FAILED: \(error.localizedDescription)")
+                status = .failed("Tunnel dead, re-provision failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     // MARK: - Keypair management
 
     /// Returns the existing public key, or generates + stores a new Curve25519 keypair.
@@ -299,6 +351,7 @@ final class WireGuardManager: ObservableObject {
 
     /// Provisions a peer for the given server, installs the NE profile. Does not connect.
     private func provisionAndInstall(server: VPNServer) async throws {
+        DebugLogger.shared.peer("Provisioning on node=\(server.nodeId) region=\(server.region)")
         let pubkey    = try ensureKeypair()
         let label     = "WraithVPN-\(UIDevice.current.name.prefix(20))"
         let provision = try await APIClient.shared.provisionPeer(
@@ -324,6 +377,7 @@ final class WireGuardManager: ObservableObject {
             try? KeychainHelper.shared.save(ip, for: .wgAssignedIP)
         }
         if let ip = exitIP { try? KeychainHelper.shared.save(ip, for: .wgExitIP) }
+        DebugLogger.shared.peer("Provisioned: peerId=\(provision.peerId) ip=\(provision.assignedIpv4) node=\(provision.nodeId) exit=\(exitIP ?? "nil")")
     }
 
     /// Switches an existing peer to a new server node atomically (no extra slot consumed).
@@ -401,6 +455,29 @@ final class WireGuardManager: ObservableObject {
                     let region = KeychainHelper.shared.readOptional(for: .activeRegion) ?? ""
                     connectedServer = VPNServer.stub(nodeId: nodeId, region: region)
                 }
+                DebugLogger.shared.ne("Loaded existing NE profile, peerId=\(activePeerId ?? "nil")")
+
+                // Verify the peer is still active on the backend. If it was revoked
+                // (all peers deleted, TTL reap, etc.) the NE profile is stale and
+                // on-demand will start a tunnel that cannot handshake.
+                if let peerId = activePeerId,
+                   KeychainHelper.shared.readOptional(for: .subscriptionToken) != nil {
+                    Task {
+                        let stillActive = await APIClient.shared.renewPeer(peerId: peerId)
+                        if !stillActive {
+                            DebugLogger.shared.peer("Stale peer detected on launch: \(peerId). Clearing profile.")
+                            // Peer is gone -- clear local state so autoProvisionIfNeeded
+                            // will fire and install a fresh config.
+                            await removeProfile()
+                            isProvisioned = false
+                            activePeerId  = nil
+                            KeychainHelper.shared.delete(for: .activePeerId)
+                            KeychainHelper.shared.delete(for: .activeNodeId)
+                        } else {
+                            DebugLogger.shared.peer("Peer \(peerId) confirmed active on backend")
+                        }
+                    }
+                }
             } else {
                 manager = NETunnelProviderManager()
             }
@@ -460,6 +537,13 @@ final class WireGuardManager: ObservableObject {
         guard let mgr = manager else { return }
         try? await mgr.removeFromPreferences()
         manager = nil
+    }
+
+    // MARK: - Tunnel session (for health checks)
+
+    /// Exposes the NE tunnel session so DNSHealthCheck can send provider messages.
+    var tunnelProviderSession: NETunnelProviderSession? {
+        manager?.connection as? NETunnelProviderSession
     }
 
     // MARK: - Tunnel start
@@ -534,9 +618,19 @@ final class WireGuardManager: ObservableObject {
         // Post notifications for VPN state changes
         if status == .connected && previousStatus != .connected {
             NotificationCenter.default.post(name: .vpnDidConnect, object: nil)
+            DebugLogger.shared.ne("Tunnel status -> connected")
+            // Run post-connect health check after a brief delay to let the
+            // WG handshake complete. If the health check detects a dead tunnel,
+            // automatically re-provision.
+            Task { await postConnectHealthCheck() }
         }
         if status == .disconnected && previousStatus != .disconnected {
             NotificationCenter.default.post(name: .vpnDidDisconnect, object: nil)
+            DebugLogger.shared.ne("Tunnel status -> disconnected")
+            healthReport = nil
+        }
+        if status == .connecting && previousStatus != .connecting {
+            DebugLogger.shared.ne("Tunnel status -> connecting")
         }
         previousStatus = status
     }

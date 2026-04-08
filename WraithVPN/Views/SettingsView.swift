@@ -54,6 +54,9 @@ struct SettingsView: View {
                     }
                     subscriptionCard
                     supportCard
+                    if isFounderToken {
+                        debugCard
+                    }
                     dangerCard
                     versionFooter
                 }
@@ -938,6 +941,80 @@ struct SettingsView: View {
             .padding(KFSpacing.lg)
         }
         .presentationDetents([.medium])
+    }
+
+    // MARK: - Debug card (founder only)
+
+    private var isFounderToken: Bool {
+        guard let plan = KeychainHelper.shared.readOptional(for: .tokenPlan) else { return false }
+        return ["founder", "total", "total_annual"].contains(plan)
+    }
+
+    @ObservedObject private var debugLogger = DebugLogger.shared
+
+    private var debugCard: some View {
+        VStack(alignment: .leading, spacing: KFSpacing.md) {
+            sectionHeader("Developer")
+
+            Toggle(isOn: $debugLogger.isEnabled) {
+                HStack(spacing: KFSpacing.sm) {
+                    Image(systemName: "ant.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.kfAccentPurple)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Debug Mode")
+                            .font(KFFont.body(14))
+                            .foregroundStyle(.white)
+                        Text("Captures API calls, tunnel events, DNS tests. Founder only.")
+                            .font(KFFont.caption(12))
+                            .foregroundStyle(Color.kfTextMuted)
+                    }
+                }
+            }
+            .tint(Color.kfAccentPurple)
+
+            if debugLogger.isEnabled {
+                Divider().background(Color.kfBorder)
+
+                NavigationLink {
+                    DebugLogView()
+                        .environmentObject(vpn)
+                } label: {
+                    SettingsRow(icon: "doc.text.magnifyingglass", label: "View Debug Log") {
+                        HStack(spacing: 4) {
+                            Text("\(debugLogger.entries.count)")
+                                .font(KFFont.caption(12, weight: .semibold))
+                                .foregroundStyle(Color.kfAccentPurple)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.kfTextMuted)
+                        }
+                    }
+                }
+
+                if let report = vpn.healthReport {
+                    Divider().background(Color.kfBorder)
+
+                    HStack(spacing: KFSpacing.sm) {
+                        Image(systemName: report.isHealthy ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(report.isHealthy ? Color.kfConnected : Color.kfError)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Tunnel Health")
+                                .font(KFFont.body(14))
+                                .foregroundStyle(.white)
+                            Text(report.diagnosis)
+                                .font(KFFont.caption(12))
+                                .foregroundStyle(Color.kfTextMuted)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(KFSpacing.md)
+        .kfCard()
     }
 
     private var versionFooter: some View {
