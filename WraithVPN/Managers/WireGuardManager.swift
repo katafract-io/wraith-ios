@@ -33,9 +33,7 @@ final class WireGuardManager: ObservableObject {
     /// User's preference — persisted across launches. Distinct from the NE profile's
     /// isOnDemandEnabled, which is temporarily disabled on manual disconnect so iOS
     /// doesn't fight the user.
-    @Published var autoConnectEnabled: Bool = UserDefaults.standard.object(forKey: "autoConnectEnabled") == nil
-        ? true
-        : UserDefaults.standard.bool(forKey: "autoConnectEnabled")
+    @Published var autoConnectEnabled: Bool = UserDefaults.standard.bool(forKey: "autoConnectEnabled")
     /// Whether to enable the OS-level kill switch (includeAllNetworks). When off, traffic
     /// still routes through WireGuard but iOS can fall back if the tunnel drops.
     @Published var tunnelMode: TunnelMode = TunnelMode(
