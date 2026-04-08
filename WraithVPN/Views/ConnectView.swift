@@ -124,65 +124,11 @@ struct ConnectView: View {
     // MARK: - Connect button
 
     private var connectButton: some View {
-        Button(action: handleConnectTap) {
-            connectButtonFace
-        }
-        .buttonStyle(ScaleButtonStyle())
-        .disabled(vpn.status == .connecting || vpn.status == .disconnecting || vpn.isProvisioning)
-        .onChange(of: vpn.status) { _, newStatus in
-            isAnimatingRing = (newStatus == .connecting || newStatus == .disconnecting || vpn.isProvisioning)
-        }
-        .onChange(of: vpn.isProvisioning) { _, provisioning in
-            isAnimatingRing = provisioning || vpn.status == .connecting || vpn.status == .disconnecting
-        }
-        .sensoryFeedback(.impact(weight: .medium), trigger: vpn.status == .connected)
-        .sensoryFeedback(.impact(weight: .light),  trigger: vpn.status == .disconnected)
-    }
-
-    private var connectButtonFace: some View {
-        ZStack {
-            connectButtonRing
-            connectButtonGlow
-            connectButtonDisk
-            connectButtonLabel
-        }
-    }
-
-    private var connectButtonRing: some View {
-        Circle()
-            .stroke(AngularGradient.kfConnectButtonRing(status: vpn.status), lineWidth: 5)
-            .frame(width: 248, height: 248)
-            .rotationEffect(.degrees(isAnimatingRing ? 360 : 0))
-            .animation(ringAnimation, value: isAnimatingRing)
-    }
-
-    private var connectButtonGlow: some View {
-        Circle()
-            .fill(RadialGradient(
-                colors: [ringCenterColor.opacity(0.25), ringCenterColor.opacity(0.05), Color.clear],
-                center: .center, startRadius: 0, endRadius: 112
-            ))
-            .frame(width: 214, height: 214)
-    }
-
-    private var connectButtonDisk: some View {
-        Circle()
-            .fill(Color.kfSurface)
-            .frame(width: 178, height: 178)
-            .overlay(Circle().strokeBorder(Color.kfBorder, lineWidth: 1).frame(width: 178, height: 178))
-    }
-
-    private var connectButtonLabel: some View {
-        VStack(spacing: KFSpacing.xs) {
-            Image(systemName: buttonIcon)
-                .font(.system(size: 42, weight: .medium))
-                .foregroundStyle(buttonIconGradient)
-                .animation(.easeInOut(duration: 0.3), value: vpn.status)
-            Text(buttonLabel)
-                .font(KFFont.caption(12, weight: .semibold))
-                .kerning(1.4)
-                .foregroundStyle(Color.kfTextMuted)
-        }
+        ConnectButtonView(
+            isAnimatingRing: $isAnimatingRing,
+            onTap: handleConnectTap
+        )
+        .environmentObject(vpn)
     }
 
     private func heroSection(layout: ConnectLayout) -> some View {
@@ -412,50 +358,6 @@ struct ConnectView: View {
 
     // MARK: - Computed helpers
 
-    private var ringAnimation: Animation {
-        if vpn.status == .connecting || vpn.status == .disconnecting || vpn.isProvisioning {
-            return .linear(duration: 1.5).repeatForever(autoreverses: false)
-        }
-        return .easeOut(duration: 0.5)
-    }
-
-    private var buttonIconGradient: LinearGradient {
-        if vpn.status == .connected {
-            return LinearGradient(colors: [.kfConnected, Color(hex: "#86efac")],
-                                  startPoint: .top, endPoint: .bottom)
-        }
-        return LinearGradient(colors: [.kfTextSecondary, .kfTextMuted],
-                              startPoint: .top, endPoint: .bottom)
-    }
-
-    private var buttonIcon: String {
-        if vpn.isProvisioning { return "ellipsis" }
-        switch vpn.status {
-        case .connected:     return "power"
-        case .connecting:    return "ellipsis"
-        case .disconnecting: return "ellipsis"
-        default:             return "power"
-        }
-    }
-
-    private var ringCenterColor: Color {
-        switch vpn.status {
-        case .connected:    return .kfConnected
-        case .connecting, .disconnecting: return .kfConnecting
-        default:            return .kfAccentPurple
-        }
-    }
-
-    private var buttonLabel: String {
-        if vpn.isProvisioning { return "PREPARING" }
-        switch vpn.status {
-        case .connected:     return "DISCONNECT"
-        case .connecting:    return "CONNECTING"
-        case .disconnecting: return "DISCONNECTING"
-        default:             return "CONNECT"
-        }
-    }
-
     private var statusCaption: String {
         if vpn.isAutoProvisioning {
             return "Setting up your secure route…"
@@ -495,6 +397,121 @@ private struct ConnectLayout {
     var sectionSpacing: CGFloat { compact ? 18 : 24 }
     var heroTopPadding: CGFloat { compact ? 6 : 18 }
     var heroSpacing: CGFloat { compact ? 22 : 28 }
+}
+
+// MARK: - Connect button view
+
+private struct ConnectButtonView: View {
+
+    @EnvironmentObject var vpn: WireGuardManager
+    @Binding var isAnimatingRing: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            ZStack {
+                ring
+                glow
+                disk
+                label
+            }
+        }
+        .buttonStyle(ScaleButtonStyle())
+        .disabled(isDisabled)
+        .onChange(of: vpn.status) { _, newStatus in
+            isAnimatingRing = newStatus == .connecting || newStatus == .disconnecting || vpn.isProvisioning
+        }
+        .onChange(of: vpn.isProvisioning) { _, provisioning in
+            isAnimatingRing = provisioning || vpn.status == .connecting || vpn.status == .disconnecting
+        }
+        .sensoryFeedback(.impact(weight: .medium), trigger: vpn.status == .connected)
+        .sensoryFeedback(.impact(weight: .light),  trigger: vpn.status == .disconnected)
+    }
+
+    private var isDisabled: Bool {
+        vpn.status == .connecting || vpn.status == .disconnecting || vpn.isProvisioning
+    }
+
+    private var ring: some View {
+        Circle()
+            .stroke(AngularGradient.kfConnectButtonRing(status: vpn.status), lineWidth: 5)
+            .frame(width: 248, height: 248)
+            .rotationEffect(.degrees(isAnimatingRing ? 360 : 0))
+            .animation(ringAnimation, value: isAnimatingRing)
+    }
+
+    private var glow: some View {
+        Circle()
+            .fill(RadialGradient(
+                colors: [ringCenterColor.opacity(0.25), ringCenterColor.opacity(0.05), Color.clear],
+                center: .center, startRadius: 0, endRadius: 112
+            ))
+            .frame(width: 214, height: 214)
+    }
+
+    private var disk: some View {
+        Circle()
+            .fill(Color.kfSurface)
+            .frame(width: 178, height: 178)
+            .overlay(Circle().strokeBorder(Color.kfBorder, lineWidth: 1).frame(width: 178, height: 178))
+    }
+
+    private var label: some View {
+        VStack(spacing: KFSpacing.xs) {
+            Image(systemName: buttonIcon)
+                .font(.system(size: 42, weight: .medium))
+                .foregroundStyle(buttonIconGradient)
+                .animation(.easeInOut(duration: 0.3), value: vpn.status)
+            Text(buttonLabel)
+                .font(KFFont.caption(12, weight: .semibold))
+                .kerning(1.4)
+                .foregroundStyle(Color.kfTextMuted)
+        }
+    }
+
+    private var ringAnimation: Animation {
+        if vpn.status == .connecting || vpn.status == .disconnecting || vpn.isProvisioning {
+            return .linear(duration: 1.5).repeatForever(autoreverses: false)
+        }
+        return .easeOut(duration: 0.5)
+    }
+
+    private var buttonIconGradient: LinearGradient {
+        if vpn.status == .connected {
+            return LinearGradient(colors: [.kfConnected, Color(hex: "#86efac")],
+                                  startPoint: .top, endPoint: .bottom)
+        }
+        return LinearGradient(colors: [.kfTextSecondary, .kfTextMuted],
+                              startPoint: .top, endPoint: .bottom)
+    }
+
+    private var buttonIcon: String {
+        if vpn.isProvisioning { return "ellipsis" }
+        switch vpn.status {
+        case .connected:     return "power"
+        case .connecting:    return "ellipsis"
+        case .disconnecting: return "ellipsis"
+        default:             return "power"
+        }
+    }
+
+    private var ringCenterColor: Color {
+        switch vpn.status {
+        case .connected:                  return .kfConnected
+        case .connecting, .disconnecting: return .kfConnecting
+        default:                          return .kfAccentPurple
+        }
+    }
+
+    private var buttonLabel: String {
+        if vpn.isProvisioning { return "PREPARING" }
+        switch vpn.status {
+        case .connected:     return "DISCONNECT"
+        case .connecting:    return "CONNECTING"
+        case .disconnecting: return "DISCONNECTING"
+        default:             return "CONNECT"
+        }
+    }
 }
 
 // MARK: - Scale button style
