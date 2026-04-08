@@ -138,8 +138,13 @@ struct SettingsView: View {
                     set: { advanced in
                         simpleMode = !advanced
                         if !advanced {
-                            // Switching back to simple — disable kill switch
-                            Task { await vpn.setTunnelMode(.standard) }
+                            // Switching back to simple — disable kill switch + auto-connect.
+                            // Stay Connected is advanced-only; enforce it here so the NE
+                            // profile doesn't keep isOnDemandEnabled=true in the background.
+                            Task {
+                                await vpn.setTunnelMode(.standard)
+                                await vpn.setAutoConnect(false)
+                            }
                         }
                     }
                 ))
