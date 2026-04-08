@@ -2,9 +2,9 @@
 """Check Xcode Cloud build status for WraithVPN."""
 import jwt, time, requests, sys
 
-KEY_ID     = "8ASCZ4CMK8"
+KEY_ID = os.environ.get("ASC_KEY_ID", "")
 ISSUER_ID = os.environ.get("ASC_ISSUER_ID", "")
-KEY_PATH   = "/Users/christianflores/.appstoreconnect/private_keys/AuthKey_8ASCZ4CMK8.p8"
+KEY_PATH   = "/home/artemis/.appstoreconnect/AuthKey_WQLSW6398S.p8"
 PRODUCT_ID = "044EC9AF-C09E-418D-A9DD-0D85E3F55EE1"
 WORKFLOWS  = {
     "9524E3E9-4C37-4492-B54A-FCC6FC287E5B": "Deploy",
