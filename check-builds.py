@@ -1,10 +1,22 @@
 #!/usr/bin/env python3
-"""Check Xcode Cloud build status for WraithVPN."""
-import jwt, time, requests, sys
+"""Check Xcode Cloud build status for WraithVPN.
 
-KEY_ID     = "YOUR_ASC_KEY_ID"
-ISSUER_ID  = "YOUR_ISSUER_ID"
-KEY_PATH   = "/home/artemis/.appstoreconnect/AuthKey_YOUR_ASC_KEY_ID.p8"
+Prerequisites:
+  pip install pyjwt requests
+
+Setup:
+  Download your App Store Connect API key (.p8) from:
+    App Store Connect → Users & Access → Integrations → App Store Connect API
+  Then set these environment variables (or edit the constants below):
+    ASC_KEY_ID      — Key ID shown in App Store Connect
+    ASC_ISSUER_ID   — Issuer ID shown on the same page
+    ASC_KEY_PATH    — Path to your downloaded .p8 file
+"""
+import jwt, time, requests, sys, os
+
+KEY_ID     = os.environ.get("ASC_KEY_ID",     "YOUR_ASC_KEY_ID")
+ISSUER_ID  = os.environ.get("ASC_ISSUER_ID",  "YOUR_ISSUER_ID")
+KEY_PATH   = os.environ.get("ASC_KEY_PATH",   os.path.expanduser("~/.appstoreconnect/private_keys/AuthKey_YOUR_ASC_KEY_ID.p8"))
 PRODUCT_ID = "044EC9AF-C09E-418D-A9DD-0D85E3F55EE1"
 WORKFLOWS  = {
     "9524E3E9-4C37-4492-B54A-FCC6FC287E5B": "Deploy",
@@ -19,33 +31,30 @@ payload = {"iss": ISSUER_ID, "iat": int(time.time()), "exp": int(time.time()) + 
 token = jwt.encode(payload, private_key, algorithm="ES256", headers={"kid": KEY_ID})
 headers = {"Authorization": f"Bearer {token}"}
 
-any_found = False
+any_builds = False
 for wf_id, wf_name in WORKFLOWS.items():
     r = requests.get(
         f"https://api.appstoreconnect.apple.com/v1/ciWorkflows/{wf_id}/buildRuns",
         params={"limit": 5},
         headers=headers,
     )
-    if r.status_code != 200:
-        print(f"{wf_name}: API error {r.status_code}")
+    if r.status_code == 404:
+        print(f"{wf_name}: API error 404")
         continue
-    runs = r.json().get("data", [])
-    if not runs:
-        print(f"{wf_name}: no runs yet")
+    data = r.json().get("data", [])
+    if not data:
         continue
+    any_builds = True
     print(f"\n── {wf_name} ──")
-    any_found = True
-    for run in runs:
-        a = run["attributes"]
-        status   = a.get("completionStatus") or "RUNNING"
-        progress = a.get("executionProgress", "")
-        commit   = (a.get("sourceCommit") or {}).get("message", "")[:60]
-        created  = a.get("createdDate", "")[:16]
-        icon = {"SUCCEEDED": "✓", "FAILED": "✗", "CANCELED": "–"}.get(status, "⟳")
-        print(f"  {icon} {status:15} {created}  {commit}")
-        if progress and status not in ("SUCCEEDED", "FAILED", "CANCELED"):
-            print(f"    progress: {progress}")
+    for build in data:
+        attrs = build["attributes"]
+        progress   = attrs.get("executionProgress", "?")
+        status     = attrs.get("completionStatus", "-")
+        started_at = attrs.get("sourceCommit", {}).get("committedDate", "")[:16]
+        msg        = attrs.get("sourceCommit", {}).get("message", "")[:60]
+        icon = "✓" if status == "SUCCEEDED" else ("…" if progress == "RUNNING" else "✗")
+        print(f"  {icon} {status:<16} {started_at}  {msg}")
 
-if not any_found:
+if not any_builds:
     print("\nNo builds found. Xcode Cloud may not have triggered yet.")
-    print("Check that workflows are set to trigger on branch push in App Store Connect.")
+    print("Check that workflows are set to trigger on tag push in App Store Connect.")

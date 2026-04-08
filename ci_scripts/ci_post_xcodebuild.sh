@@ -1,23 +1,28 @@
 #!/bin/bash
 # Runs after xcodebuild archive, before Xcode Cloud exports+uploads to TestFlight.
-# Writes the ASC API key so xcodebuild's exportArchive step uses API key auth
-# instead of the expired Session Proxy Provider (Apple ID session).
+# Writes the App Store Connect API key so xcodebuild's exportArchive step can
+# authenticate without an Apple ID session.
+#
+# Set these in your Xcode Cloud workflow under Environment → Secrets:
+#   ASC_KEY_ID       — Key ID from App Store Connect (Users & Access → Keys)
+#   ASC_ISSUER_ID    — Issuer ID from the same page
+#   ASC_KEY_CONTENT  — Full contents of the .p8 file (including BEGIN/END lines)
 
 set -euo pipefail
 
-KEY_ID="YOUR_ASC_KEY_ID"
-ISSUER_ID="YOUR_ISSUER_ID"
-KEY_B64="REDACTED_ASC_KEY"
+if [[ -z "${ASC_KEY_ID:-}" || -z "${ASC_ISSUER_ID:-}" || -z "${ASC_KEY_CONTENT:-}" ]]; then
+  echo "ci_post_xcodebuild: ASC_KEY_ID / ASC_ISSUER_ID / ASC_KEY_CONTENT not set — skipping key setup."
+  echo "  Set these as Xcode Cloud environment secrets to enable API key authentication."
+  exit 0
+fi
 
-# Write .p8 to the location xcodebuild searches automatically
 KEYS_DIR="$HOME/.appstoreconnect/private_keys"
 mkdir -p "$KEYS_DIR"
-echo "$KEY_B64" | base64 --decode > "$KEYS_DIR/AuthKey_${KEY_ID}.p8"
-chmod 600 "$KEYS_DIR/AuthKey_${KEY_ID}.p8"
+printf '%s' "$ASC_KEY_CONTENT" > "$KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8"
+chmod 600 "$KEYS_DIR/AuthKey_${ASC_KEY_ID}.p8"
 
-# Also export env vars (belt and suspenders — Xcode Cloud may source this)
-export APP_STORE_CONNECT_API_KEY_KEY_ID="$KEY_ID"
-export APP_STORE_CONNECT_API_KEY_ISSUER_ID="$ISSUER_ID"
-export APP_STORE_CONNECT_API_KEY_CONTENT="$KEY_B64"
+export APP_STORE_CONNECT_API_KEY_KEY_ID="$ASC_KEY_ID"
+export APP_STORE_CONNECT_API_KEY_ISSUER_ID="$ASC_ISSUER_ID"
+export APP_STORE_CONNECT_API_KEY_CONTENT="$ASC_KEY_CONTENT"
 
-echo "ci_post_xcodebuild: ASC API key written to $KEYS_DIR/AuthKey_${KEY_ID}.p8"
+echo "ci_post_xcodebuild: ASC API key written (Key ID: ${ASC_KEY_ID})"
