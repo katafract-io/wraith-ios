@@ -782,7 +782,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.106;
+
+				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0;
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = YES;
@@ -809,7 +812,10 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.106;
+
+				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0;
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = YES;
@@ -834,7 +840,10 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.106;
+
+				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0;
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith.tunnel;
 				PRODUCT_NAME = WireGuardTunnel;
 				SKIP_INSTALL = YES;
@@ -857,7 +866,10 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.106;
+
+				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0;
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith.tunnel;
 				PRODUCT_NAME = WireGuardTunnel;
 				SKIP_INSTALL = YES;
@@ -916,7 +928,10 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.106;
+
+				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0;
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -941,7 +956,10 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.106;
+
+				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 1.0;
+
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
