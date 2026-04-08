@@ -74,15 +74,15 @@ struct PaywallView: View {
                 .font(KFFont.display(34))
                 .foregroundStyle(.white)
 
-            Text("Route through the Enclave with Haven DNS protection.")
+            Text("Haven DNS protects you everywhere, always. Add WraithVPN to protect your traffic too.")
                 .font(KFFont.body(16))
                 .foregroundStyle(Color.kfTextSecondary)
                 .multilineTextAlignment(.center)
 
             HStack(spacing: KFSpacing.sm) {
-                valueChip("WraithGates")
-                valueChip("Enclave")
                 valueChip("Haven DNS")
+                valueChip("Enclave VPN")
+                valueChip("Kill Switch")
             }
             .padding(.top, 4)
         }
@@ -104,13 +104,18 @@ struct PaywallView: View {
 
     private var featureList: some View {
         VStack(alignment: .leading, spacing: KFSpacing.sm) {
-            FeatureRow(icon: "lock.fill",            text: "AES-256 + ChaCha20 encryption")
-            FeatureRow(icon: "bolt.fill",            text: "Route through WraithGates with fast WireGuard performance")
-            FeatureRow(icon: "shield.lefthalf.filled", text: "The Enclave adds a protected network layer for your traffic")
-            FeatureRow(icon: "network.badge.shield.half.filled", text: "Haven DNS helps reduce ad and tracker traffic")
-            FeatureRow(icon: "globe",                text: "Current nodes across the US, Germany, Finland, and Singapore")
-            FeatureRow(icon: "location.fill",        text: "Manual region selection when available on supported plans")
-            FeatureRow(icon: "iphone.and.arrow.forward", text: "Up to 5 simultaneous devices")
+            FeatureRow(icon: "shield.lefthalf.filled",
+                       text: "Haven DNS — blocks ads, trackers, and malware 24/7, even when VPN is off")
+            FeatureRow(icon: "bolt.fill",
+                       text: "WireGuard VPN through global WraithGate exit nodes (EU, US, Singapore)")
+            FeatureRow(icon: "lock.fill",
+                       text: "ChaCha20 encryption — all traffic routed through the Enclave")
+            FeatureRow(icon: "network.badge.shield.half.filled",
+                       text: "Enhanced DNS protection (HIGH / FAMILY) unlocked when VPN is on")
+            FeatureRow(icon: "xmark.shield.fill",
+                       text: "Kill switch — connection blocked if VPN drops unexpectedly")
+            FeatureRow(icon: "iphone.and.arrow.forward",
+                       text: "Up to 5 simultaneous devices")
         }
         .padding(KFSpacing.md)
         .kfCard()
@@ -161,10 +166,10 @@ struct PaywallView: View {
     private var freeTierButton: some View {
         VStack(spacing: KFSpacing.sm) {
             VStack(alignment: .leading, spacing: KFSpacing.xs) {
-                Text("Start free")
+                Text("Start free with Haven DNS")
                     .font(KFFont.heading(18))
                     .foregroundStyle(.white)
-                Text("Haven DNS protects your DNS queries from ads and trackers at no cost. Upgrade to WraithVPN when you want full Enclave routing through WraithGates.")
+                Text("Haven DNS is free forever — blocks ads and basic trackers at the DNS level, on every network, always on. Upgrade to WraithVPN when you want the full Enclave VPN and stronger protection tiers.")
                     .font(KFFont.body(14))
                     .foregroundStyle(Color.kfTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -181,7 +186,7 @@ struct PaywallView: View {
                     Text("Continue With Haven DNS Free")
                         .font(KFFont.heading(16))
                         .foregroundStyle(.white)
-                    Text("Haven DNS blocks ads and trackers at the DNS level. Upgrade to WraithVPN for full Enclave routing.")
+                    Text("Blocks ads and basic trackers — no subscription required.")
                         .font(KFFont.caption(12))
                         .foregroundStyle(Color.kfTextSecondary)
                         .multilineTextAlignment(.center)
