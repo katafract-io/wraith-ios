@@ -272,7 +272,7 @@ final class APIClient {
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: urlRequest)
-        } catch let urlError as URLError where attempt < 2 {
+        } catch _ as URLError where attempt < 2 {
             // Transient connection failure — back off and retry.
             let delaySecs = UInt64(1_000_000_000) * UInt64(attempt + 1)
             try? await Task.sleep(nanoseconds: delaySecs)
