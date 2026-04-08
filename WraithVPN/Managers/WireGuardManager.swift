@@ -66,6 +66,10 @@ final class WireGuardManager: ObservableObject {
     /// Resets to 0 on successful handshake or manual disconnect.
     private var reprovisionAttempts = 0
     private let maxReprovisionAttempts = 2
+    /// Holds the current post-connect health check task so a rapid
+    /// connect/disconnect/connect cycle cancels the stale check and only
+    /// the most-recent stable connect runs the full suite.
+    private var healthCheckTask: Task<Void, Never>?
 
     // MARK: - Init / lifecycle
 
@@ -271,9 +275,11 @@ final class WireGuardManager: ObservableObject {
     /// If the tunnel is dead (peer revoked, no handshake), automatically
     /// re-provisions to the nearest server.
     private func postConnectHealthCheck() async {
-        // Wait 2 seconds for the WG handshake to complete
+        // Wait 2 seconds for the WG handshake to complete.
+        // Use Task.sleep so cancellation propagates if a newer connect fires.
         try? await Task.sleep(for: .milliseconds(2000))
-        guard status == .connected else { return }
+        // If this task was superseded by a newer connect cycle, bail out.
+        guard !Task.isCancelled, status == .connected else { return }
 
         let havenIP: String? = {
             guard let assigned = assignedIP else { return nil }
@@ -294,6 +300,16 @@ final class WireGuardManager: ObservableObject {
                 status = .failed("VPN tunnel blocked. Try switching to cellular or a different network.")
                 return
             }
+            // Claim the provisioning lock BEFORE the first await so a
+            // concurrent health-check task that also passed the sleep
+            // will see isProvisioning=true and bail. With @MainActor the
+            // check+set is atomic between suspension points.
+            guard !isProvisioning else {
+                DebugLogger.shared.wg("Health check: reprovision already in progress, skipping.")
+                return
+            }
+            isProvisioning = true
+            defer { isProvisioning = false }
             reprovisionAttempts += 1
             DebugLogger.shared.wg("Health check FAILED: tunnel dead. Auto-reprovisioning (attempt \(reprovisionAttempts)/\(maxReprovisionAttempts))...")
 
@@ -649,10 +665,11 @@ final class WireGuardManager: ObservableObject {
         if status == .connected && previousStatus != .connected {
             NotificationCenter.default.post(name: .vpnDidConnect, object: nil)
             DebugLogger.shared.ne("Tunnel status -> connected")
-            // Run post-connect health check after a brief delay to let the
-            // WG handshake complete. If the health check detects a dead tunnel,
-            // automatically re-provision.
-            Task { await postConnectHealthCheck() }
+            // Cancel any in-flight health check from a prior connect cycle
+            // (rapid connect/disconnect/connect generates stale tasks).
+            // Only the latest stable connect should run the suite.
+            healthCheckTask?.cancel()
+            healthCheckTask = Task { await postConnectHealthCheck() }
         }
         if status == .disconnected && previousStatus != .disconnected {
             NotificationCenter.default.post(name: .vpnDidDisconnect, object: nil)
