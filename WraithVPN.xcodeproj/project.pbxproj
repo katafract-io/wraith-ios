@@ -62,6 +62,11 @@
 		BBMAC066 /* MainMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC020 /* MainMenuView.swift */; };
 		BBMAC067 /* MacAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC021 /* MacAccountView.swift */; };
 		BBMAC068 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100030 /* NetworkExtension.framework */; };
+		BBMAC069 /* DebugLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100024 /* DebugLogger.swift */; };
+		BBMAC070 /* DNSHealthCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100025 /* DNSHealthCheck.swift */; };
+		AA000023 /* DebugLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100024 /* DebugLogger.swift */; };
+		AA000024 /* DNSHealthCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100025 /* DNSHealthCheck.swift */; };
+		AA000025 /* DebugLogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100026 /* DebugLogView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -158,6 +163,9 @@
 		AA100021 /* WireGuardTunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WireGuardTunnel.entitlements; sourceTree = "<group>"; };
 		AA100022 /* TunnelConfiguration+WgQuickConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TunnelConfiguration+WgQuickConfig.swift"; sourceTree = "<group>"; };
 		AA100023 /* String+ArrayConversion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "String+ArrayConversion.swift"; sourceTree = "<group>"; };
+		AA100024 /* DebugLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogger.swift; sourceTree = "<group>"; };
+		AA100025 /* DNSHealthCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DNSHealthCheck.swift; sourceTree = "<group>"; };
+		AA100026 /* DebugLogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogView.swift; sourceTree = "<group>"; };
 		AA100030 /* NetworkExtension.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = NetworkExtension.framework; path = System/Library/Frameworks/NetworkExtension.framework; sourceTree = SDKROOT; };
 		AA100031 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		AA100032 /* CryptoKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CryptoKit.framework; path = System/Library/Frameworks/CryptoKit.framework; sourceTree = SDKROOT; };
@@ -261,6 +269,7 @@
 				AA10001B /* AchievementsView.swift */,
 				AA10001C /* DnsStatsView.swift */,
 				AA10001D /* TokenRecoverySheet.swift */,
+				AA100026 /* DebugLogView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -273,6 +282,8 @@
 				AA100011 /* StoreKitManager.swift */,
 				AA100012 /* ServerListManager.swift */,
 				AA100018 /* HavenDNSManager.swift */,
+				AA100024 /* DebugLogger.swift */,
+				AA100025 /* DNSHealthCheck.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -581,6 +592,9 @@
 				AA000013 /* KeychainHelper.swift in Sources */,
 				AA000014 /* DesignSystem.swift in Sources */,
 				AA000016 /* HavenDNSManager.swift in Sources */,
+				AA000023 /* DebugLogger.swift in Sources */,
+				AA000024 /* DNSHealthCheck.swift in Sources */,
+				AA000025 /* DebugLogView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -626,6 +640,8 @@
 				BBMAC065 /* DesignSystem.swift in Sources */,
 				BBMAC066 /* MainMenuView.swift in Sources */,
 				BBMAC067 /* MacAccountView.swift in Sources */,
+				BBMAC069 /* DebugLogger.swift in Sources */,
+				BBMAC070 /* DNSHealthCheck.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -757,7 +773,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = WraithVPN/WraithVPN.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 77;
+				CURRENT_PROJECT_VERSION = 85;
 				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WraithVPN/Info.plist;
@@ -766,7 +782,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.80;
+				MARKETING_VERSION = 1.0.85;
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = YES;
@@ -784,7 +800,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = WraithVPN/WraithVPN.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 77;
+				CURRENT_PROJECT_VERSION = 85;
 				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WraithVPN/Info.plist;
@@ -793,7 +809,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.80;
+				MARKETING_VERSION = 1.0.85;
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTS_MACCATALYST = YES;
@@ -809,7 +825,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WireGuardTunnel/WireGuardTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 77;
+				CURRENT_PROJECT_VERSION = 85;
 				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				INFOPLIST_FILE = WireGuardTunnel/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
@@ -818,7 +834,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.80;
+				MARKETING_VERSION = 1.0.85;
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith.tunnel;
 				PRODUCT_NAME = WireGuardTunnel;
 				SKIP_INSTALL = YES;
@@ -832,7 +848,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = WireGuardTunnel/WireGuardTunnel.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 77;
+				CURRENT_PROJECT_VERSION = 85;
 				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				INFOPLIST_FILE = WireGuardTunnel/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.4;
@@ -841,7 +857,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.80;
+				MARKETING_VERSION = 1.0.85;
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith.tunnel;
 				PRODUCT_NAME = WireGuardTunnel;
 				SKIP_INSTALL = YES;
@@ -891,7 +907,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = WraithVPNMac/WraithVPNMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 77;
+				CURRENT_PROJECT_VERSION = 85;
 				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WraithVPNMac/Info.plist;
@@ -900,7 +916,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.80;
+				MARKETING_VERSION = 1.0.85;
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
@@ -916,7 +932,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = WraithVPNMac/WraithVPNMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 77;
+				CURRENT_PROJECT_VERSION = 85;
 				DEVELOPMENT_TEAM = 2SGGP65W6C;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WraithVPNMac/Info.plist;
@@ -925,7 +941,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 1.0.80;
+				MARKETING_VERSION = 1.0.85;
 				PRODUCT_BUNDLE_IDENTIFIER = com.katafract.wraith;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
