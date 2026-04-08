@@ -262,6 +262,11 @@ final class APIClient {
             urlRequest.timeoutInterval = t
         }
 
+        // Debug logging
+        Task { @MainActor in
+            DebugLogger.shared.api("\(req.method.rawValue) \(req.path)")
+        }
+
         return try await execute(urlRequest, req: req)
     }
 
@@ -280,6 +285,17 @@ final class APIClient {
         }
 
         guard let http = response as? HTTPURLResponse else { throw APIError.noData }
+
+        // Debug log response
+        Task { @MainActor in
+            let path = urlRequest.url?.path ?? "?"
+            if (200..<300).contains(http.statusCode) {
+                DebugLogger.shared.api("\(http.statusCode) \(path) (\(data.count)B)")
+            } else {
+                let excerpt = String(data: data.prefix(200), encoding: .utf8) ?? "<binary>"
+                DebugLogger.shared.api("\(http.statusCode) \(path): \(excerpt)")
+            }
+        }
 
         guard (200..<300).contains(http.statusCode) else {
             let bodyStr = String(data: data, encoding: .utf8) ?? "<binary>"
