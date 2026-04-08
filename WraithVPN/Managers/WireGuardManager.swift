@@ -130,21 +130,25 @@ final class WireGuardManager: ObservableObject {
         if let peerId = existingPeerId, let nodeId = existingNodeId {
             if nodeId == server.nodeId {
                 // Same node — profile already installed, just reconnect.
+                // Renew last_seen so the peer isn't reaped as idle.
+                await APIClient.shared.renewPeer(peerId: peerId)
             } else {
-                // Different node — switch atomically. Fall back to fresh provision
-                // if the source peer is already revoked or missing (e.g. after reinstall).
+                // Different node — switch atomically. On 404 (stale keychain),
+                // look up any existing peer for this device's pubkey before
+                // falling back to a fresh provision — avoids orphaning a peer
+                // that exists but isn't tracked in keychain.
                 do {
                     try await switchAndInstall(fromPeerId: peerId, server: server)
                 } catch let error as APIError {
                     if case .httpError(let code, _) = error, code == 404 {
-                        try await provisionAndInstall(server: server)
+                        try await switchFromAnyExistingOrProvision(server: server)
                     } else {
                         throw error
                     }
                 }
             }
         } else {
-            try await provisionAndInstall(server: server)
+            try await switchFromAnyExistingOrProvision(server: server)
         }
 
         await applyOnDemand(autoConnectEnabled)
@@ -269,6 +273,22 @@ final class WireGuardManager: ObservableObject {
     }
 
     // MARK: - Peer provisioning
+
+    /// Checks the server for any active peer matching the current device pubkey.
+    /// If one exists on a different node, switches from it (no extra slot consumed).
+    /// Falls back to a fresh provision if no matching peer is found.
+    /// Used as the 404-fallback path and for cases where keychain has no peer ID.
+    private func switchFromAnyExistingOrProvision(server: VPNServer) async throws {
+        // Look for any active peer on a different node — covers stale keychain
+        // after restore, partial reinstall, or HA failback. Switch from it rather
+        // than provisioning fresh (keeps slot count stable, no orphan left behind).
+        if let peerList = try? await APIClient.shared.fetchPeers(),
+           let match = peerList.peers.first(where: { $0.nodeId != server.nodeId }) {
+            try await switchAndInstall(fromPeerId: match.peerId, server: server)
+        } else {
+            try await provisionAndInstall(server: server)
+        }
+    }
 
     /// Provisions a peer for the given server, installs the NE profile. Does not connect.
     private func provisionAndInstall(server: VPNServer) async throws {
