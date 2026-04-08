@@ -196,7 +196,8 @@ All authenticated endpoints require `Authorization: Bearer <token>`.
 
 Builds are triggered on every push to `main`. The **Deploy** workflow archives and uploads to App Store Connect. The internal TestFlight group receives all builds automatically (`hasAccessToAllBuilds = true`).
 
-App Store Connect API key: `YOUR_ASC_KEY_ID` (stored at `~/.appstoreconnect/private_keys/`)
+Xcode Cloud requires three environment secrets set in the workflow (Environment → Secrets):
+`ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_CONTENT` — obtain from App Store Connect → Users & Access → Integrations.
 
 ---
 

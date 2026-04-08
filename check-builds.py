@@ -14,10 +14,15 @@ Setup:
 """
 import jwt, time, requests, sys, os
 
-KEY_ID     = os.environ.get("ASC_KEY_ID",     "YOUR_ASC_KEY_ID")
-ISSUER_ID  = os.environ.get("ASC_ISSUER_ID",  "YOUR_ISSUER_ID")
-KEY_PATH   = os.environ.get("ASC_KEY_PATH",   os.path.expanduser("~/.appstoreconnect/private_keys/AuthKey_YOUR_ASC_KEY_ID.p8"))
+KEY_ID     = os.environ.get("ASC_KEY_ID")
+ISSUER_ID  = os.environ.get("ASC_ISSUER_ID")
+KEY_PATH   = os.environ.get("ASC_KEY_PATH")
 PRODUCT_ID = "044EC9AF-C09E-418D-A9DD-0D85E3F55EE1"
+
+if not KEY_ID or not ISSUER_ID or not KEY_PATH:
+    print("Set ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_PATH environment variables.")
+    print("Get these from App Store Connect → Users & Access → Integrations.")
+    sys.exit(1)
 WORKFLOWS  = {
     "9524E3E9-4C37-4492-B54A-FCC6FC287E5B": "Deploy",
     "F27DCAD5-F3FE-4D0E-B641-697BD7964F9C": "Default",
