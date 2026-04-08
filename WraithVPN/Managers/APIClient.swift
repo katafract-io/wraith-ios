@@ -39,7 +39,7 @@ extension Notification.Name {
 // MARK: - Request descriptor
 
 private enum HTTPMethod: String {
-    case GET, POST, PUT, DELETE
+    case GET, POST, PUT, DELETE, PATCH
 }
 
 private struct APIRequest {
@@ -130,6 +130,16 @@ final class APIClient {
     /// Revokes (deletes) a provisioned peer.
     func deletePeer(peerId: String) async throws {
         let _: EmptyResponse = try await request(APIRequest(.DELETE, "/v1/peers/\(peerId)", auth: true))
+    }
+
+    /// Touches last_seen for an active peer so it isn't reaped as idle.
+    /// Called on every same-node reconnect. Fire-and-forget — failures are non-fatal.
+    func renewPeer(peerId: String) async {
+        struct RenewResponse: Decodable { let renewed: Bool }
+        let _: RenewResponse? = try? await request(
+            APIRequest(.PATCH, "/v1/peers/\(peerId)/renew", auth: true),
+            baseOverride: provisionURL
+        )
     }
 
     /// Validates an existing subscription token and returns its info.
