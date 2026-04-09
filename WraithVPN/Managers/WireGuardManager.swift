@@ -216,9 +216,11 @@ final class WireGuardManager: ObservableObject {
     func disconnect() {
         reprovisionAttempts = 0
         status = .disconnecting
+        let session = tunnelProviderSession
         // Disable OnDemand BEFORE stopping — if we stop first, iOS fires the
         // OnDemand rule immediately and reconnects before applyOnDemand finishes.
         Task {
+            await TelemetryManager.shared.sessionEnded(connection: session)
             await applyOnDemand(false)
             manager?.connection.stopVPNTunnel()
         }
@@ -305,8 +307,13 @@ final class WireGuardManager: ObservableObject {
             // NOTE: this is the ONLY place we reset. .connected NE events
             // do NOT reset because NE connected ≠ WG handshake succeeded.
             reprovisionAttempts = 0
+            if let server = connectedServer, let session = tunnelProviderSession {
+                TelemetryManager.shared.sessionStarted(nodeId: server.nodeId, connection: session)
+            }
             return
         }
+
+        TelemetryManager.shared.recordHandshakeFailure()
 
         // Tunnel is dead — try to reprovision (max 2 attempts per connect session).
         guard reprovisionAttempts < maxReprovisionAttempts else {
@@ -340,6 +347,7 @@ final class WireGuardManager: ObservableObject {
         }
 
         // Attempt 2+: full reprovision (peer revoked or server unreachable)
+        TelemetryManager.shared.recordReprovision()
         DebugLogger.shared.wg("Health check FAILED: soft reconnect insufficient. Full reprovision (attempt \(reprovisionAttempts)/\(maxReprovisionAttempts))...")
 
         // Tear down the dead tunnel and re-provision
