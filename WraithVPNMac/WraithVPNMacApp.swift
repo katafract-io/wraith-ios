@@ -12,6 +12,19 @@ struct WraithVPNMacApp: App {
     @StateObject private var haven   = HavenDNSManager()
 
     var body: some Scene {
+        // Main app window — shown on launch and from dock
+        Window("WraithVPN", id: "main") {
+            MacMainView()
+                .environmentObject(storeKit)
+                .environmentObject(vpn)
+                .environmentObject(servers)
+                .environmentObject(haven)
+        }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 440, height: 560)
+        .windowStyle(.hiddenTitleBar)
+
+        // Menubar quick-access popover
         MenuBarExtra {
             MainMenuView()
                 .environmentObject(storeKit)
