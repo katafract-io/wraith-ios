@@ -1069,6 +1069,8 @@ struct SettingsView: View {
         Task {
             await vpn.revokePeer()
             _ = try? vpn.generateKeypair()
+            // Auto-provision with new keys — no force-close required
+            await vpn.autoProvisionIfNeeded()
         }
     }
 
