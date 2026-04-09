@@ -407,7 +407,6 @@
 		BBMACTUNGRP01 /* WraithVPNMacTunnel */ = {
 			isa = PBXGroup;
 			children = (
-				AA100020 /* PacketTunnelProvider.swift */,
 				BBMACTUNFR002 /* WraithVPNMacTunnel.entitlements */,
 				BBMACTUNFR001 /* Info.plist */,
 			);
