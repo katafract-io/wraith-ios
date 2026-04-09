@@ -60,8 +60,8 @@ struct DnsStatsView: View {
                 .font(KFFont.caption(13))
                 .foregroundStyle(Color.kfTextMuted)
 
-            if stats.since != nil {
-                Text("Last 30 days")
+            if let since = stats.since {
+                Text("Since \(since)")
                     .font(KFFont.caption(12))
                     .foregroundStyle(Color.kfTextMuted)
             }
@@ -125,7 +125,7 @@ struct DnsStatsView: View {
 
     private func historyCard(_ stats: DnsStatsResponse) -> some View {
         VStack(alignment: .leading, spacing: KFSpacing.md) {
-            Text("30-DAY HISTORY")
+            Text("DAILY HISTORY (LAST 30 DAYS)")
                 .font(KFFont.caption(11))
                 .fontWeight(.semibold)
                 .foregroundStyle(Color.kfTextSecondary)
