@@ -712,6 +712,10 @@ final class WireGuardManager: ObservableObject {
         if status == .disconnected && previousStatus != .disconnected {
             NotificationCenter.default.post(name: .vpnDidDisconnect, object: nil)
             DebugLogger.shared.ne("Tunnel status -> disconnected")
+            if let tunnelError = UserDefaults(suiteName: "group.com.katafract.wraith")?
+                .string(forKey: "lastTunnelError") {
+                DebugLogger.shared.ne("NE error: \(tunnelError)")
+            }
             healthReport = nil
         }
         if status == .connecting && previousStatus != .connecting {

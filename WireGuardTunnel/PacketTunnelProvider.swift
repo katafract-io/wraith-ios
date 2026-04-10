@@ -9,6 +9,13 @@ import WireGuardKit
 import os.log
 
 private let log = Logger(subsystem: "com.katafract.wraith.tunnel", category: "PacketTunnelProvider")
+private let appGroupDefaults = UserDefaults(suiteName: "group.com.katafract.wraith")
+
+private func writeTunnelError(_ message: String) {
+    let entry = "\(ISO8601DateFormatter().string(from: Date())) \(message)"
+    appGroupDefaults?.set(entry, forKey: "lastTunnelError")
+    log.error("\(message, privacy: .public)")
+}
 
 final class PacketTunnelProvider: NEPacketTunnelProvider {
 
@@ -27,9 +34,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         guard let proto = protocolConfiguration as? NETunnelProviderProtocol,
               let providerConfig = proto.providerConfiguration,
               let wgConfig = providerConfig["wgConfig"] as? String else {
-            let error = TunnelError.missingConfiguration
-            log.error("Missing WireGuard config")
-            completionHandler(error)
+            writeTunnelError("startTunnel: missing wgConfig in providerConfiguration")
+            completionHandler(TunnelError.missingConfiguration)
             return
         }
 
@@ -37,25 +43,27 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         do {
             tunnelConfiguration = try TunnelConfiguration.makeWraithConfiguration(from: wgConfig, name: "wraith")
         } catch {
-            log.error("Failed to parse WireGuard config: \(error.localizedDescription, privacy: .public)")
+            writeTunnelError("startTunnel: config parse failed — \(error.localizedDescription)")
             completionHandler(TunnelError.invalidConfiguration)
             return
         }
 
         adapter.start(tunnelConfiguration: tunnelConfiguration) { [weak self] adapterError in
             guard let self else {
+                writeTunnelError("startTunnel: adapter deallocated before start completed")
                 completionHandler(TunnelError.adapterDeallocated)
                 return
             }
 
             guard let adapterError else {
                 let interfaceName = self.adapter.interfaceName ?? "unknown"
+                appGroupDefaults?.removeObject(forKey: "lastTunnelError")
                 log.info("WireGuard tunnel started on interface \(interfaceName, privacy: .public)")
                 completionHandler(nil)
                 return
             }
 
-            log.error("WireGuard adapter start failed: \(String(describing: adapterError), privacy: .public)")
+            writeTunnelError("startTunnel: adapter failed — \(adapterError.asTunnelError.localizedDescription)")
             completionHandler(adapterError.asTunnelError)
         }
     }
