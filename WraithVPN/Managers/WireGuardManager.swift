@@ -45,6 +45,12 @@ final class WireGuardManager: ObservableObject {
     @Published var connectedSince: Date? = nil
     /// Latest tunnel health report (populated after each connect).
     @Published var healthReport: TunnelHealthReport? = nil
+    /// True when the active tunnel is a multi-hop (Enclave+) connection.
+    @Published var isMultiHop: Bool = false
+    /// Entry node for the active multi-hop session (nil if single-hop).
+    @Published var multiHopEntryServer: VPNServer? = nil
+    /// Exit node for the active multi-hop session (same as connectedServer for multi-hop).
+    @Published var multiHopExitServer: VPNServer? = nil
 
     // MARK: - Private
 
@@ -171,6 +177,96 @@ final class WireGuardManager: ObservableObject {
         try startTunnel()
     }
 
+    /// Provisions a multi-hop (Enclave+) tunnel to the given entry and exit nodes,
+    /// installs the profile, then connects.
+    func connectMultiHop(entry: VPNServer, exit: VPNServer) async throws {
+        guard !isProvisioning else { return }
+        isProvisioning = true
+        defer { isProvisioning = false }
+
+        await stopAllActiveTunnels()
+        status = .connecting
+
+        // Revoke any existing single-hop or multi-hop peers before provisioning new ones.
+        await revokeAllPeers()
+
+        let pubkey = try ensureKeypair()
+        let label  = "WraithVPN-\(UIDevice.current.name.prefix(20))"
+        let provision = try await APIClient.shared.provisionMultiHop(
+            pubkey:      pubkey,
+            entryNodeId: entry.nodeId,
+            exitNodeId:  exit.nodeId,
+            label:       label
+        )
+
+        let config = try injectPrivateKey(into: provision.config)
+        // Use exit server as the "connected server" for display purposes (that's the exit IP).
+        try await installProfile(configText: config, server: exit)
+
+        // Persist multi-hop metadata.
+        isMultiHop          = true
+        multiHopEntryServer = entry
+        multiHopExitServer  = exit
+        connectedServer     = exit
+        assignedIP          = provision.assignedIpv4
+        exitIP              = exit.ipv4.isEmpty ? nil : exit.ipv4
+        isProvisioned       = true
+
+        try? KeychainHelper.shared.save(provision.hopGroupId,   for: .multiHopGroupId)
+        try? KeychainHelper.shared.save(provision.entryPeerId,  for: .multiHopEntryPeerId)
+        try? KeychainHelper.shared.save(provision.exitPeerId,   for: .multiHopExitPeerId)
+        try? KeychainHelper.shared.save(provision.entryNodeId,  for: .multiHopEntryNodeId)
+        try? KeychainHelper.shared.save(provision.exitNodeId,   for: .multiHopExitNodeId)
+        if let ip = provision.assignedIpv4.isEmpty ? nil : Optional(provision.assignedIpv4) {
+            try? KeychainHelper.shared.save(ip, for: .wgAssignedIP)
+        }
+        NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
+        DebugLogger.shared.peer("Multi-hop provisioned: entry=\(entry.cityName) exit=\(exit.cityName) ip=\(provision.assignedIpv4)")
+
+        await applyOnDemand(autoConnectEnabled)
+        try? await manager?.loadFromPreferences()
+        try startTunnel()
+    }
+
+    /// Revokes ALL active peers (single-hop + multi-hop) for this device.
+    private func revokeAllPeers() async {
+        // Single-hop peer
+        if let peerId = activePeerId ?? KeychainHelper.shared.readOptional(for: .activePeerId) {
+            try? await APIClient.shared.deletePeer(peerId: peerId)
+        }
+        // Multi-hop entry peer
+        if let peerId = KeychainHelper.shared.readOptional(for: .multiHopEntryPeerId) {
+            try? await APIClient.shared.deletePeer(peerId: peerId)
+        }
+        // Multi-hop exit peer
+        if let peerId = KeychainHelper.shared.readOptional(for: .multiHopExitPeerId) {
+            try? await APIClient.shared.deletePeer(peerId: peerId)
+        }
+        clearPeerState()
+    }
+
+    private func clearPeerState() {
+        KeychainHelper.shared.delete(for: .activePeerId)
+        KeychainHelper.shared.delete(for: .activeNodeId)
+        KeychainHelper.shared.delete(for: .activeRegion)
+        KeychainHelper.shared.delete(for: .wgAssignedIP)
+        KeychainHelper.shared.delete(for: .wgExitIP)
+        KeychainHelper.shared.delete(for: .multiHopGroupId)
+        KeychainHelper.shared.delete(for: .multiHopEntryPeerId)
+        KeychainHelper.shared.delete(for: .multiHopExitPeerId)
+        KeychainHelper.shared.delete(for: .multiHopEntryNodeId)
+        KeychainHelper.shared.delete(for: .multiHopExitNodeId)
+        activePeerId        = nil
+        assignedIP          = nil
+        exitIP              = nil
+        connectedSince      = nil
+        connectedServer     = nil
+        isMultiHop          = false
+        multiHopEntryServer = nil
+        multiHopExitServer  = nil
+        isProvisioned       = false
+    }
+
     /// Starts the already-installed VPN profile.
     func connect() async throws {
         guard isProvisioned else {
@@ -258,22 +354,11 @@ final class WireGuardManager: ObservableObject {
         await applyOnDemand(enabled)
     }
 
-    /// Revokes the active peer from the backend and removes the local profile.
+    /// Revokes all active peers (single-hop or multi-hop) and removes the local profile.
     func revokePeer() async {
-        if let peerId = activePeerId ?? KeychainHelper.shared.readOptional(for: .activePeerId) {
-            try? await APIClient.shared.deletePeer(peerId: peerId)
-        }
+        await revokeAllPeers()
         await removeProfile()
-        KeychainHelper.shared.delete(for: .activePeerId)
-        KeychainHelper.shared.delete(for: .wgAssignedIP)
-        KeychainHelper.shared.delete(for: .wgExitIP)
-        activePeerId    = nil
-        assignedIP      = nil
-        exitIP          = nil
-        connectedSince  = nil
-        connectedServer = nil
-        isProvisioned   = false
-        status          = .disconnected
+        status = .disconnected
     }
 
     // MARK: - Post-connect health check

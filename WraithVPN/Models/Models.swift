@@ -119,6 +119,48 @@ struct ProvisionResponse: Decodable {
     }
 }
 
+// MARK: - Multi-hop provision
+
+struct MultiHopProvisionRequest: Encodable {
+    let clientPubkey: String
+    let entryNodeId: String?
+    let exitNodeId: String?
+    let label: String
+
+    enum CodingKeys: String, CodingKey {
+        case clientPubkey = "client_pubkey"
+        case entryNodeId  = "entry_node_id"
+        case exitNodeId   = "exit_node_id"
+        case label
+    }
+}
+
+struct MultiHopProvisionResponse: Decodable {
+    let hopGroupId:    String
+    let config:        String   // Combined WG config (two peers, single interface)
+    let assignedIpv4:  String
+    let assignedIpv6:  String?
+    let entryPeerId:   String
+    let exitPeerId:    String
+    let entryNodeId:   String
+    let exitNodeId:    String
+    let entryEndpoint: String
+    let exitEndpoint:  String
+
+    enum CodingKeys: String, CodingKey {
+        case hopGroupId    = "hop_group_id"
+        case config
+        case assignedIpv4  = "assigned_ipv4"
+        case assignedIpv6  = "assigned_ipv6"
+        case entryPeerId   = "entry_peer_id"
+        case exitPeerId    = "exit_peer_id"
+        case entryNodeId   = "entry_node_id"
+        case exitNodeId    = "exit_node_id"
+        case entryEndpoint = "entry_endpoint"
+        case exitEndpoint  = "exit_endpoint"
+    }
+}
+
 struct SwitchPeerRequest: Encodable {
     let fromPeerId: String
     let region: String?

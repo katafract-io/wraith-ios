@@ -122,6 +122,13 @@ final class APIClient {
         return try await request(APIRequest(.POST, "/v1/peers/switch", body: body, auth: true), baseOverride: provisionURL)
     }
 
+    /// Provisions a multi-hop peer pair (entry + exit) for Enclave+ subscribers.
+    /// Returns a combined single WireGuard config with two peers.
+    func provisionMultiHop(pubkey: String, entryNodeId: String?, exitNodeId: String?, label: String) async throws -> MultiHopProvisionResponse {
+        let body = MultiHopProvisionRequest(clientPubkey: pubkey, entryNodeId: entryNodeId, exitNodeId: exitNodeId, label: label)
+        return try await request(APIRequest(.POST, "/v1/peers/provision-multihop", body: body, auth: true), baseOverride: provisionURL)
+    }
+
     /// Lists all peers provisioned for the current token.
     func fetchPeers() async throws -> PeerListResponse {
         try await request(APIRequest(.GET, "/v1/peers", auth: true))

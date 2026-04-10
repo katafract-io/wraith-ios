@@ -15,6 +15,7 @@ struct ConnectView: View {
     @AppStorage("simpleMode") private var simpleMode = true
 
     @State private var showServerPicker  = false
+    @State private var showMultiHopPicker = false
     @State private var errorMessage: String? = nil
     @State private var showError         = false
     @State private var upgradeReason: UpgradeReason? = nil
@@ -38,6 +39,7 @@ struct ConnectView: View {
                     heroSection(layout: layout)
                     connectionSummary
                     serverButton
+                    multiHopButton
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, KFSpacing.lg)
@@ -49,6 +51,11 @@ struct ConnectView: View {
             ServerPickerView()
                 .environmentObject(servers)
                 .environmentObject(vpn)
+        }
+        .sheet(isPresented: $showMultiHopPicker) {
+            MultiHopPickerSheet()
+                .environmentObject(vpn)
+                .environmentObject(servers)
         }
         .sheet(item: $upgradeReason) { reason in
             UpgradeSheet(reason: reason)
@@ -204,11 +211,19 @@ struct ConnectView: View {
     private var connectionSummary: some View {
         VStack(spacing: KFSpacing.sm) {
             HStack(spacing: KFSpacing.md) {
-                summaryPill(
-                    title: "Route",
-                    value: simpleMode ? "Automatic" : (servers.selectedServer?.cityName ?? "Automatic"),
-                    icon: (simpleMode || servers.selectedServer == nil) ? "sparkles" : "location.north.line.fill"
-                )
+                if vpn.isMultiHop, let entry = vpn.multiHopEntryServer, let exit = vpn.multiHopExitServer {
+                    summaryPill(
+                        title: "Route",
+                        value: "\(entry.cityName) → \(exit.cityName)",
+                        icon: "arrow.triangle.2.circlepath"
+                    )
+                } else {
+                    summaryPill(
+                        title: "Route",
+                        value: simpleMode ? "Automatic" : (servers.selectedServer?.cityName ?? "Automatic"),
+                        icon: (simpleMode || servers.selectedServer == nil) ? "sparkles" : "location.north.line.fill"
+                    )
+                }
                 summaryPill(
                     title: "Mode",
                     value: vpn.status == .connected ? "Protected" : "Standby",
@@ -331,6 +346,70 @@ struct ConnectView: View {
         .opacity(storeKit.isHavenOnly ? 0.4 : 1)
     }
 
+    // MARK: - Multi-hop button
+
+    @ViewBuilder
+    private var multiHopButton: some View {
+        // Show a locked teaser for Enclave users; hidden for Haven
+        if !storeKit.isHavenOnly {
+            Button {
+                if storeKit.hasMultiHop {
+                    showMultiHopPicker = true
+                } else {
+                    upgradeReason = .multiHopRequiresPlus
+                }
+            } label: {
+                HStack(spacing: KFSpacing.md) {
+                    Image(systemName: storeKit.hasMultiHop ? "arrow.triangle.2.circlepath.circle.fill" : "lock.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(storeKit.hasMultiHop ? Color(hex: "#f59e0b") : Color.kfTextMuted)
+                        .frame(width: 40, height: 40)
+                        .background(
+                            storeKit.hasMultiHop
+                                ? Color(hex: "#f59e0b").opacity(0.12)
+                                : Color.kfTextMuted.opacity(0.08)
+                        )
+                        .clipShape(Circle())
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("ENCLAVE+")
+                            .font(KFFont.caption(10, weight: .bold))
+                            .kerning(1.3)
+                            .foregroundStyle(storeKit.hasMultiHop ? Color(hex: "#f59e0b").opacity(0.7) : Color.kfTextMuted)
+                        if vpn.isMultiHop, let entry = vpn.multiHopEntryServer, let exit = vpn.multiHopExitServer {
+                            HStack(spacing: 4) {
+                                Text(entry.cityName)
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 11))
+                                Text(exit.cityName)
+                            }
+                            .font(KFFont.heading(15))
+                            .foregroundStyle(.white)
+                        } else {
+                            Text(storeKit.hasMultiHop ? "Multi-Hop Routing" : "Multi-Hop Routing")
+                                .font(KFFont.heading(17))
+                                .foregroundStyle(storeKit.hasMultiHop ? .white : Color.kfTextSecondary)
+                        }
+                        Text(storeKit.hasMultiHop
+                             ? "Double-encrypt through two nodes"
+                             : "Upgrade to Enclave+ to unlock")
+                            .font(KFFont.caption(12))
+                            .foregroundStyle(Color.kfTextMuted)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.kfTextMuted)
+                }
+                .padding(KFSpacing.md)
+                .kfCard()
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     // MARK: - Actions
 
     private func handleConnectTap() {
@@ -397,8 +476,14 @@ struct ConnectView: View {
         }
         switch vpn.status {
         case .connected:
+            if vpn.isMultiHop {
+                return "Double-encrypted. Neither hop sees your full picture."
+            }
             return "Traffic is flowing through the Enclave."
         case .connecting:
+            if vpn.isMultiHop {
+                return "Building your double-hop route…"
+            }
             return "Establishing a secure route through a WraithGate."
         case .disconnecting:
             return "Tearing down the current route."
