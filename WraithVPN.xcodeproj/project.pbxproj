@@ -33,6 +33,8 @@
 		AA00001B /* AchievementsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10001B /* AchievementsView.swift */; };
 		AA00001C /* DnsStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10001C /* DnsStatsView.swift */; };
 		AA00001D /* TokenRecoverySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10001D /* TokenRecoverySheet.swift */; };
+		AA00001E /* UpgradeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10001E /* UpgradeSheet.swift */; };
+		AA00001F /* MultiHopPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA10001F /* MultiHopPickerSheet.swift */; };
 		AA000020 /* PacketTunnelProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100020 /* PacketTunnelProvider.swift */; };
 		AA000021 /* TunnelConfiguration+WgQuickConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100022 /* TunnelConfiguration+WgQuickConfig.swift */; };
 		AA000022 /* String+ArrayConversion.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100023 /* String+ArrayConversion.swift */; };
@@ -181,6 +183,8 @@
 		AA10001B /* AchievementsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AchievementsView.swift; sourceTree = "<group>"; };
 		AA10001C /* DnsStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DnsStatsView.swift; sourceTree = "<group>"; };
 		AA10001D /* TokenRecoverySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenRecoverySheet.swift; sourceTree = "<group>"; };
+		AA10001E /* UpgradeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpgradeSheet.swift; sourceTree = "<group>"; };
+		AA10001F /* MultiHopPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiHopPickerSheet.swift; sourceTree = "<group>"; };
 		AA100020 /* PacketTunnelProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PacketTunnelProvider.swift; sourceTree = "<group>"; };
 		AA100021 /* WireGuardTunnel.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WireGuardTunnel.entitlements; sourceTree = "<group>"; };
 		AA100022 /* TunnelConfiguration+WgQuickConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TunnelConfiguration+WgQuickConfig.swift"; sourceTree = "<group>"; };
@@ -311,6 +315,8 @@
 				AA10001B /* AchievementsView.swift */,
 				AA10001C /* DnsStatsView.swift */,
 				AA10001D /* TokenRecoverySheet.swift */,
+				AA10001E /* UpgradeSheet.swift */,
+				AA10001F /* MultiHopPickerSheet.swift */,
 				AA100026 /* DebugLogView.swift */,
 			);
 			path = Views;
@@ -662,6 +668,8 @@
 				AA00001B /* AchievementsView.swift in Sources */,
 				AA00001C /* DnsStatsView.swift in Sources */,
 				AA00001D /* TokenRecoverySheet.swift in Sources */,
+				AA00001E /* UpgradeSheet.swift in Sources */,
+				AA00001F /* MultiHopPickerSheet.swift in Sources */,
 				AA000008 /* Models.swift in Sources */,
 				AA000009 /* APIClient.swift in Sources */,
 				AA000010 /* WireGuardManager.swift in Sources */,
