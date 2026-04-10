@@ -8,14 +8,16 @@ import SwiftUI
 
 struct ConnectView: View {
 
-    @EnvironmentObject var vpn:    WireGuardManager
-    @EnvironmentObject var servers: ServerListManager
+    @EnvironmentObject var vpn:      WireGuardManager
+    @EnvironmentObject var servers:  ServerListManager
+    @EnvironmentObject var storeKit: StoreKitManager
 
     @AppStorage("simpleMode") private var simpleMode = true
 
-    @State private var showServerPicker = false
+    @State private var showServerPicker  = false
     @State private var errorMessage: String? = nil
-    @State private var showError = false
+    @State private var showError         = false
+    @State private var upgradeReason: UpgradeReason? = nil
 
     private var isAnimatingRing: Bool {
         vpn.status == .connecting || vpn.status == .disconnecting || vpn.isProvisioning
@@ -47,6 +49,9 @@ struct ConnectView: View {
             ServerPickerView()
                 .environmentObject(servers)
                 .environmentObject(vpn)
+        }
+        .sheet(item: $upgradeReason) { reason in
+            UpgradeSheet(reason: reason)
         }
         .alert("Connection Error", isPresented: $showError, actions: {
             Button("OK", role: .cancel) {}
@@ -129,8 +134,25 @@ struct ConnectView: View {
     // MARK: - Connect button
 
     private var connectButton: some View {
-        ConnectButtonView(isAnimatingRing: isAnimatingRing, onTap: handleConnectTap)
-            .environmentObject(vpn)
+        ZStack {
+            ConnectButtonView(isAnimatingRing: isAnimatingRing, onTap: handleConnectTap)
+                .environmentObject(vpn)
+                .opacity(storeKit.isHavenOnly ? 0.35 : 1)
+
+            if storeKit.isHavenOnly {
+                Button {
+                    upgradeReason = .vpnRequiresEnclave
+                } label: {
+                    VStack(spacing: 6) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                        Text("Enclave Required")
+                            .font(KFFont.caption(12, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
+        }
     }
 
     private func heroSection(layout: ConnectLayout) -> some View {
@@ -305,7 +327,8 @@ struct ConnectView: View {
             .padding(KFSpacing.md)
             .kfCard()
         }
-        .disabled(simpleMode)
+        .disabled(simpleMode || storeKit.isHavenOnly)
+        .opacity(storeKit.isHavenOnly ? 0.4 : 1)
     }
 
     // MARK: - Actions
@@ -318,10 +341,15 @@ struct ConnectView: View {
                     return
                 }
 
-                // Haven free tier has no token — VPN requires a subscription.
+                // No token at all — route to paywall.
                 if KeychainHelper.shared.readOptional(for: .subscriptionToken) == nil {
-                    errorMessage = "WraithVPN requires an active subscription. Upgrade in Settings to get started."
-                    showError = true
+                    upgradeReason = .vpnRequiresEnclave
+                    return
+                }
+
+                // Haven plan — VPN is locked, show tier upgrade sheet.
+                if storeKit.isHavenOnly {
+                    upgradeReason = .vpnRequiresEnclave
                     return
                 }
 
@@ -361,6 +389,9 @@ struct ConnectView: View {
     // MARK: - Computed helpers
 
     private var statusCaption: String {
+        if storeKit.isHavenOnly {
+            return "Haven DNS is active. Upgrade to Enclave to enable the VPN tunnel."
+        }
         if vpn.isAutoProvisioning {
             return "Setting up your secure route…"
         }

@@ -309,6 +309,23 @@ struct SubscriptionInfo: Equatable {
         }
     }
 
+    // MARK: - Tier capabilities
+
+    /// DNS protection only — no VPN tunnel.
+    var isHavenOnly: Bool {
+        plan == "haven" || plan == "haven_annual"
+    }
+
+    /// Can provision a single VPN tunnel (Enclave and above).
+    var hasVPN: Bool {
+        !isHavenOnly
+    }
+
+    /// Can provision multi-hop double tunnel (Enclave+ and above).
+    var hasMultiHop: Bool {
+        plan == "enclave_plus" || plan == "enclave_plus_annual" || plan == "founder"
+    }
+
     var isExpired: Bool {
         guard let exp = expiresAt else { return false }
         return exp < Date()

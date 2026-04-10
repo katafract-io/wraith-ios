@@ -39,7 +39,10 @@ final class StoreKitManager: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var purchaseError: String? = nil
     @Published var subscription: SubscriptionInfo? = nil
-    @Published var hasPurchased: Bool = false
+    @Published var hasPurchased:  Bool = false
+    @Published var isHavenOnly:   Bool = false
+    @Published var hasVPN:        Bool = false
+    @Published var hasMultiHop:   Bool = false
     @Published var isCheckingEntitlements: Bool = true
     @Published var seatPurchaseError: String? = nil
     @Published var isPurchasingSeatPack: Bool = false
@@ -187,6 +190,9 @@ final class StoreKitManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "hasUnlockedFreeTier")
         subscription = nil
         hasPurchased = false
+        isHavenOnly  = false
+        hasVPN       = false
+        hasMultiHop  = false
     }
 
     // MARK: - Private helpers
@@ -245,6 +251,9 @@ final class StoreKitManager: ObservableObject {
 
         subscription = SubscriptionInfo(plan: plan, expiresAt: expiresAt, token: token)
         hasPurchased = !(subscription?.isExpired ?? true)
+        isHavenOnly  = subscription?.isHavenOnly  ?? false
+        hasVPN       = subscription?.hasVPN       ?? false
+        hasMultiHop  = subscription?.hasMultiHop  ?? false
     }
 
     /// Walk current entitlements and process any unfinished transactions.

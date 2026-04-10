@@ -91,6 +91,7 @@ struct ContentView: View {
             ConnectView()
                 .environmentObject(vpn)
                 .environmentObject(servers)
+                .environmentObject(storeKit)
                 .navigationDestination(for: String.self) { route in
                     switch route {
                     case "settings":
