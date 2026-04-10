@@ -24,7 +24,10 @@ struct MultiHopPickerSheet: View {
     @State private var isConnecting = false
     @State private var errorMessage: String? = nil
 
-    private enum HopRole { case entry, exit }
+    enum HopRole: String, Identifiable {
+        case entry, exit
+        var id: String { rawValue }
+    }
 
     // MARK: - Auto-select
 
@@ -376,7 +379,3 @@ struct MultiHopPickerSheet: View {
     }
 }
 
-// Identifiable conformance so .sheet(item:) works
-extension MultiHopPickerSheet.HopRole: Identifiable {
-    var id: String { self == .entry ? "entry" : "exit" }
-}
