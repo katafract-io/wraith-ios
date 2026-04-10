@@ -35,7 +35,7 @@ struct MultiHopPickerSheet: View {
     private var autoSelection: (entry: VPNServer, exit: VPNServer)? {
         let ranked = servers.servers
             .filter { $0.milliseconds != nil }
-            .sorted { ($0.milliseconds ?? Int.max) < ($1.milliseconds ?? Int.max) }
+            .sorted { ($0.milliseconds ?? Double.infinity) < ($1.milliseconds ?? Double.infinity) }
             .map(\.server)
 
         // Also include un-probed servers ranked by load score as fallback
@@ -143,7 +143,7 @@ struct MultiHopPickerSheet: View {
     private func modeTab(label: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(KFFont.body(15, weight: selected ? .semibold : .regular))
+                .font(.system(size: 15, weight: selected ? .semibold : .regular, design: .rounded))
                 .foregroundStyle(selected ? .white : Color.kfTextMuted)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
@@ -276,7 +276,7 @@ struct MultiHopPickerSheet: View {
                         .font(.system(size: 15, weight: .semibold))
                 }
                 Text(isConnecting ? "Connecting…" : "Connect Multi-Hop")
-                    .font(KFFont.body(16, weight: .semibold))
+                    .font(KFFont.caption(16, weight: .semibold))
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
@@ -344,7 +344,7 @@ struct MultiHopPickerSheet: View {
                             }
                             Spacer()
                             if let ms = item.milliseconds {
-                                Text("\(ms) ms")
+                                Text("\(Int(ms)) ms")
                                     .font(KFFont.mono(12))
                                     .foregroundStyle(latencyColor(ms))
                                     .padding(.horizontal, 8)
@@ -370,7 +370,7 @@ struct MultiHopPickerSheet: View {
         }
     }
 
-    private func latencyColor(_ ms: Int) -> Color {
+    private func latencyColor(_ ms: Double) -> Color {
         switch ms {
         case ..<80:  return Color(hex: "#22c55e")
         case ..<180: return Color(hex: "#f59e0b")

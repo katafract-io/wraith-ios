@@ -136,7 +136,7 @@ struct UpgradeSheet: View {
                                 showPaywall = true
                             } label: {
                                 Text("Upgrade to \(tiers[reason.highlightTier].name)")
-                                    .font(KFFont.body(16, weight: .semibold))
+                                    .font(KFFont.caption(16, weight: .semibold))
                                     .foregroundStyle(.white)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 16)
