@@ -14,7 +14,7 @@ struct SettingsView: View {
     @EnvironmentObject var haven:    HavenDNSManager
     @AppStorage("hasUnlockedFreeTier") private var hasUnlockedFreeTier = false
     @AppStorage("simpleMode") private var simpleMode = true
-    @AppStorage("iCloudTokenSync") private var iCloudSyncEnabled = false
+
 
     @State private var showSignOutAlert    = false
     @State private var showRevokeAlert     = false
@@ -748,26 +748,6 @@ struct SettingsView: View {
                     .padding(.leading, 28)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Divider().background(Color.kfBorder)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    SettingsRow(icon: "icloud.fill", label: "iCloud Keychain Sync") {
-                        Toggle("", isOn: Binding(
-                            get: { iCloudSyncEnabled },
-                            set: { newVal in
-                                iCloudSyncEnabled = newVal
-                                resyncTokenToKeychain()
-                            }
-                        ))
-                        .labelsHidden()
-                        .tint(Color.kfAccentBlue)
-                    }
-                    Text("Sync your token to iCloud so it's available on all your Apple devices. Encrypted end-to-end — Apple cannot read the contents.")
-                        .font(KFFont.caption(11))
-                        .foregroundStyle(Color.kfTextMuted)
-                        .padding(.leading, 28)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             } else {
                 Text("No token stored on this device.")
                     .font(KFFont.body(14))
@@ -1175,14 +1155,6 @@ struct SettingsView: View {
         guard token.count > 8 else { return String(repeating: "•", count: token.count) }
         let prefix = String(token.prefix(6))
         return prefix + String(repeating: "•", count: min(token.count - 6, 16))
-    }
-
-    private func resyncTokenToKeychain() {
-        for key: KeychainHelper.Key in [.subscriptionToken, .tokenExpiresAt, .tokenPlan] {
-            if let val = KeychainHelper.shared.readOptional(for: key) {
-                try? KeychainHelper.shared.save(val, for: key)
-            }
-        }
     }
 
     private var planLabel: String {

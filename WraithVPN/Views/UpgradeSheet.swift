@@ -41,6 +41,7 @@ struct UpgradeSheet: View {
 
     let reason: UpgradeReason
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var storeKit: StoreKitManager
     @State private var showPaywall = false
 
     // MARK: - Tier definitions
@@ -159,9 +160,18 @@ struct UpgradeSheet: View {
         .sheet(isPresented: $showPaywall) {
             NavigationStack {
                 PaywallView()
+                    .environmentObject(storeKit)
             }
         }
         .preferredColorScheme(.dark)
+        // Auto-dismiss once the user acquires the required capability
+        // (e.g. they entered a token or upgraded inside the nested PaywallView).
+        .onChange(of: storeKit.hasMultiHop) { _, hasIt in
+            if hasIt && reason == .multiHopRequiresPlus { dismiss() }
+        }
+        .onChange(of: storeKit.hasVPN) { _, hasIt in
+            if hasIt && reason == .vpnRequiresEnclave { dismiss() }
+        }
     }
 
     // MARK: - Tier card
