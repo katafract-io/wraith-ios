@@ -201,19 +201,23 @@ struct ConnectView: View {
         ZStack {
             ConnectButtonView(isAnimatingRing: isAnimatingRing, onTap: handleConnectTap)
                 .environmentObject(vpn)
-                .opacity(storeKit.isHavenOnly ? 0.35 : 1)
+                .opacity(storeKit.isHavenOnly ? 0.2 : 1)
 
             if storeKit.isHavenOnly {
                 Button {
                     upgradeReason = .vpnRequiresEnclave
                 } label: {
-                    VStack(spacing: 6) {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 22, weight: .semibold))
-                        Text("Enclave Required")
-                            .font(KFFont.caption(12, weight: .semibold))
+                    VStack(spacing: 8) {
+                        Image(systemName: "shield.checkmark.fill")
+                            .font(.system(size: 28, weight: .semibold))
+                            .foregroundStyle(Color(hex: "#38bdf8"))
+                        Text("DNS Active")
+                            .font(KFFont.caption(13, weight: .bold))
+                            .foregroundStyle(Color(hex: "#38bdf8"))
+                        Text("Tap to add VPN")
+                            .font(KFFont.caption(11))
+                            .foregroundStyle(Color.kfTextMuted)
                     }
-                    .foregroundStyle(.white)
                 }
             }
         }
@@ -232,13 +236,13 @@ struct ConnectView: View {
 
     private var statusSection: some View {
         VStack(spacing: KFSpacing.xs) {
-            Text(vpn.status.label)
+            Text(storeKit.isHavenOnly ? "DNS Protected" : vpn.status.label)
                 .font(KFFont.heading(24))
-                .foregroundStyle(vpn.status.swiftUIColor)
+                .foregroundStyle(storeKit.isHavenOnly ? Color(hex: "#38bdf8") : vpn.status.swiftUIColor)
                 .animation(.easeInOut(duration: 0.3), value: vpn.status)
                 .contentTransition(.numericText())
 
-            if vpn.status == .connected {
+            if vpn.status == .connected && !storeKit.isHavenOnly {
                 VStack(spacing: 4) {
                     HStack(spacing: KFSpacing.xs) {
                         Image(systemName: "globe")

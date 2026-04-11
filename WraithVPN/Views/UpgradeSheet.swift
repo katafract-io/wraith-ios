@@ -23,9 +23,9 @@ enum UpgradeReason: Identifiable {
     var subtitle: String {
         switch self {
         case .vpnRequiresEnclave:
-            return "Your Haven plan includes DNS protection. Upgrade to Enclave to add a full VPN tunnel."
+            return "Your DNS protection and ad blocking are active. Add a full WireGuard VPN tunnel with Enclave."
         case .multiHopRequiresPlus:
-            return "Your Enclave plan includes a single VPN tunnel. Upgrade to Enclave+ for double-hop routing."
+            return "Your single-hop VPN is active. Enclave+ routes your traffic through two separate nodes — neither hop can see both who you are and what you're doing."
         }
     }
 
