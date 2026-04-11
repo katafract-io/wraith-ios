@@ -131,8 +131,9 @@ struct ConnectView: View {
 
     private var hopModeSection: some View {
         VStack(spacing: KFSpacing.sm) {
-            // Only Enclave+ users see the toggle — others are single-hop only.
-            if storeKit.hasMultiHop {
+            // VPN users (Enclave + Enclave+) see the toggle.
+            // Selecting multi-hop on Enclave triggers an upgrade sheet via onChange.
+            if !storeKit.isHavenOnly {
                 Picker("Hop Mode", selection: $multiHopMode) {
                     Text("Single Hop").tag(false)
                     Text("Multi-Hop").tag(true)
