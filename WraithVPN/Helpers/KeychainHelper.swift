@@ -72,11 +72,16 @@ final class KeychainHelper {
 
     // MARK: - Raw data
 
-    // Keys that should sync via iCloud Keychain — survive reinstall + sync across devices
+    // Keys eligible for iCloud Keychain sync — only active when user enables it
     static let iCloudSyncedKeys: Set<Key> = [.subscriptionToken, .tokenExpiresAt, .tokenPlan]
 
+    // Returns true only when the key is eligible AND the user has opted in
+    private static func shouldSync(_ key: Key) -> Bool {
+        iCloudSyncedKeys.contains(key) && UserDefaults.standard.bool(forKey: "iCloudTokenSync")
+    }
+
     func save(_ data: Data, for key: Key) throws {
-        let synced = Self.iCloudSyncedKeys.contains(key)
+        let synced = Self.shouldSync(key)
         // synced items use AfterFirstUnlock (no ThisDeviceOnly) + kSecAttrSynchronizable
         var query: [String: Any] = [
             kSecClass as String:            kSecClassGenericPassword,

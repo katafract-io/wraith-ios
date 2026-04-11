@@ -14,6 +14,7 @@ struct SettingsView: View {
     @EnvironmentObject var haven:    HavenDNSManager
     @AppStorage("hasUnlockedFreeTier") private var hasUnlockedFreeTier = false
     @AppStorage("simpleMode") private var simpleMode = true
+    @AppStorage("iCloudTokenSync") private var iCloudSyncEnabled = false
 
     @State private var showSignOutAlert    = false
     @State private var showRevokeAlert     = false
@@ -35,6 +36,8 @@ struct SettingsView: View {
     @State private var identityLinked = UserDefaults.standard.bool(forKey: "identityLinked")
     @State private var identityLinkError: String? = nil
     @State private var showSeatPurchaseError = false
+    @State private var tokenVisible  = false
+    @State private var tokenCopied   = false
 
     // MARK: - Body
 
@@ -54,6 +57,7 @@ struct SettingsView: View {
                         connectionCard
                     }
                     subscriptionCard
+                    tokenCard
                     supportCard
                     if isAdminTokenState {
                         debugCard
@@ -696,6 +700,84 @@ struct SettingsView: View {
         .kfCard()
     }
 
+    // MARK: - Token card
+
+    private var tokenCard: some View {
+        VStack(alignment: .leading, spacing: KFSpacing.md) {
+            sectionHeader("Your Token")
+
+            if let token = KeychainHelper.shared.readOptional(for: .subscriptionToken) {
+                HStack(spacing: KFSpacing.sm) {
+                    Image(systemName: "key.horizontal.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(Color.kfAccentBlue)
+                        .frame(width: 20)
+
+                    Text(tokenVisible ? token : maskedToken(token))
+                        .font(KFFont.mono(12))
+                        .foregroundStyle(Color.kfTextSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+
+                    Spacer()
+
+                    Button {
+                        tokenVisible.toggle()
+                    } label: {
+                        Image(systemName: tokenVisible ? "eye.slash.fill" : "eye.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.kfTextMuted)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        UIPasteboard.general.string = token
+                        tokenCopied = true
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { tokenCopied = false }
+                    } label: {
+                        Image(systemName: tokenCopied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 14))
+                            .foregroundStyle(tokenCopied ? Color.kfConnected : Color.kfTextMuted)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("This is your access token. Store it safely — it can restore your subscription on any device.")
+                    .font(KFFont.caption(12))
+                    .foregroundStyle(Color.kfTextMuted)
+                    .padding(.leading, 28)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Divider().background(Color.kfBorder)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    SettingsRow(icon: "icloud.fill", label: "iCloud Keychain Sync") {
+                        Toggle("", isOn: Binding(
+                            get: { iCloudSyncEnabled },
+                            set: { newVal in
+                                iCloudSyncEnabled = newVal
+                                resyncTokenToKeychain()
+                            }
+                        ))
+                        .labelsHidden()
+                        .tint(Color.kfAccentBlue)
+                    }
+                    Text("Sync your token to iCloud so it's available on all your Apple devices. Encrypted end-to-end — Apple cannot read the contents.")
+                        .font(KFFont.caption(11))
+                        .foregroundStyle(Color.kfTextMuted)
+                        .padding(.leading, 28)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text("No token stored on this device.")
+                    .font(KFFont.body(14))
+                    .foregroundStyle(Color.kfTextMuted)
+            }
+        }
+        .padding(KFSpacing.md)
+        .kfCard()
+    }
+
     // MARK: - Subscription management card
 
     private var subscriptionCard: some View {
@@ -1087,6 +1169,20 @@ struct SettingsView: View {
 
     private var buildNumber: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+    }
+
+    private func maskedToken(_ token: String) -> String {
+        guard token.count > 8 else { return String(repeating: "•", count: token.count) }
+        let prefix = String(token.prefix(6))
+        return prefix + String(repeating: "•", count: min(token.count - 6, 16))
+    }
+
+    private func resyncTokenToKeychain() {
+        for key: KeychainHelper.Key in [.subscriptionToken, .tokenExpiresAt, .tokenPlan] {
+            if let val = KeychainHelper.shared.readOptional(for: key) {
+                try? KeychainHelper.shared.save(val, for: key)
+            }
+        }
     }
 
     private var planLabel: String {
