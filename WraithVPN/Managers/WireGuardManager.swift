@@ -142,6 +142,14 @@ final class WireGuardManager: ObservableObject {
         await stopAllActiveTunnels()
         status = .connecting
 
+        // Switching from multi-hop to single-hop: revoke both multi-hop peers and
+        // clear all local state so we provision a clean single-hop peer below.
+        // Without this, switchFromAnyExistingOrProvision picks the entry peer (wrong
+        // node) and the exit peer ends up orphaned on the server with AllowedIPs=(none).
+        if isMultiHop {
+            await revokeAllPeers()
+        }
+
         let existingPeerId = activePeerId ?? KeychainHelper.shared.readOptional(for: .activePeerId)
         let existingNodeId = connectedServer?.nodeId ?? KeychainHelper.shared.readOptional(for: .activeNodeId)
 

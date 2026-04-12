@@ -431,7 +431,9 @@ struct ConnectView: View {
 
                 if simpleMode && !multiHopMode {
                     // Simple mode: always use GeoIP nearest, ignore latency-probe selection.
-                    if vpn.isProvisioned {
+                    // Don't call connect() if still in multi-hop state — connectToServer
+                    // will revoke the old multi-hop peers and provision a clean single-hop peer.
+                    if vpn.isProvisioned && !vpn.isMultiHop {
                         try await vpn.connect()
                     } else {
                         // fetchNearestServer can take up to 15s — set connecting state
