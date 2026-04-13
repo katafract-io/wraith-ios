@@ -57,6 +57,17 @@ final class WireGuardManager: ObservableObject {
     private var manager: NETunnelProviderManager?
     private var statusObserver: NSObjectProtocol?
     private var foregroundObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
+    private var lastBackgroundedAt: Date?
+    /// Minimum background duration before a foreground check fires a Layer 2
+    /// rebalance probe. Short enough to catch real idle windows (user put phone
+    /// down, came back) while ignoring quick app switches.
+    private let layer2MinBackgroundSeconds: TimeInterval = 30
+    /// Rate-limit Layer 2 rebalance probes — don't hammer /v1/token/info on
+    /// every foreground. One check per 10 minutes is plenty for a hint that
+    /// server-side refreshes every reconcile tick.
+    private let layer2MinProbeInterval: TimeInterval = 600
+    private var lastLayer2ProbeAt: Date?
     private var previousStatus: VPNStatus = .disconnected
     private let tunnelBundleId = "com.katafract.wraith.tunnel"
     /// True while any provision/switch is in-flight. Published so the UI can
@@ -91,7 +102,19 @@ final class WireGuardManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.syncStatus() }
+            Task { @MainActor [weak self] in
+                self?.syncStatus()
+                await self?.checkLayer2RebalanceOnForeground()
+            }
+        }
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.lastBackgroundedAt = Date()
+            }
         }
 #endif
     }
@@ -99,6 +122,7 @@ final class WireGuardManager: ObservableObject {
     deinit {
         if let obs = statusObserver   { NotificationCenter.default.removeObserver(obs) }
         if let obs = foregroundObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = backgroundObserver { NotificationCenter.default.removeObserver(obs) }
     }
 
     // MARK: - Public interface
@@ -261,6 +285,47 @@ final class WireGuardManager: ObservableObject {
         await applyOnDemand(autoConnectEnabled)
         try? await manager?.loadFromPreferences()
         try startTunnel()
+    }
+
+    /// Foreground-triggered Layer 2 probe. Called when the app returns from
+    /// background after a meaningful idle gap (≥ `layer2MinBackgroundSeconds`).
+    /// Fetches a fresh `/v1/token/info`, reads the `preferredNode` hint, and
+    /// passes it to `applyPreferredNodeIfIdle`. Rate-limited to at most one
+    /// probe per `layer2MinProbeInterval` regardless of app-switch cadence.
+    ///
+    /// Why app-foreground and not a periodic timer: the idle window we want is
+    /// "user wasn't actively using the tunnel" — a foregrounding after ≥30s in
+    /// background is a strong proxy (phone was down / screen off), and riding
+    /// the existing foreground observer avoids adding a background task.
+    private func checkLayer2RebalanceOnForeground() async {
+        // Only worth checking when we're actually connected single-hop.
+        guard isProvisioned, !isProvisioning, !isMultiHop else { return }
+        guard case .connected = status else { return }
+
+        // Meaningful idle gap: either we were backgrounded for long enough, or
+        // we have no background timestamp yet (first foreground after launch).
+        if let bg = lastBackgroundedAt {
+            guard Date().timeIntervalSince(bg) >= layer2MinBackgroundSeconds else { return }
+        }
+
+        // Per-probe rate limit.
+        if let last = lastLayer2ProbeAt,
+           Date().timeIntervalSince(last) < layer2MinProbeInterval {
+            return
+        }
+        lastLayer2ProbeAt = Date()
+
+        guard let token = KeychainHelper.shared.readOptional(for: .subscriptionToken) else { return }
+        let info: TokenInfoResponse
+        do {
+            info = try await APIClient.shared.validateToken(token)
+        } catch {
+            DebugLogger.shared.peer("Layer2 probe: validateToken failed — \(error)")
+            return
+        }
+        guard let hint = info.preferredNode else { return }
+        DebugLogger.shared.peer("Layer2 probe: hint received → \(hint.nodeId) (\(hint.reason))")
+        await applyPreferredNodeIfIdle(hint)
     }
 
     /// Layer 2 silent rebalance. Consumes a `PreferredNodeHint` returned by
