@@ -16,7 +16,7 @@ struct ConnectView: View {
     @AppStorage("multiHopMode")        private var multiHopMode        = false
     @AppStorage("hopModeExplicitlySet") private var hopModeExplicitlySet = false
 
-    @State private var showServerPicker        = false
+    @State private var showRegionPicker        = false
     @State private var showMultiHopPicker      = false
     @State private var errorMessage: String? = nil
     @State private var showError          = false
@@ -48,9 +48,8 @@ struct ConnectView: View {
                 .padding(.bottom, layout.bottomPadding)
             }
         }
-        .sheet(isPresented: $showServerPicker) {
-            ServerPickerView()
-                .environmentObject(servers)
+        .sheet(isPresented: $showRegionPicker) {
+            RegionPickerView()
                 .environmentObject(vpn)
         }
         .sheet(isPresented: $showMultiHopPicker) {
@@ -331,7 +330,7 @@ struct ConnectView: View {
 
     private var serverButton: some View {
         Button {
-            if !simpleMode { showServerPicker = true }
+            if !simpleMode { showRegionPicker = true }
         } label: {
             HStack(spacing: KFSpacing.md) {
                 if simpleMode {

@@ -189,6 +189,101 @@ final class WireGuardManager: ObservableObject {
         try startTunnel()
     }
 
+    /// Phase F — region-first connect.
+    ///
+    /// Hands the picked region to the server, which selects the best node inside
+    /// that region (sticky-region HARD rule: never crosses to another region).
+    /// `preferredNodeId` is an optional hint honored only when in-region — used by
+    /// the Layer 2 rebalance path.
+    func connectToRegion(_ regionId: String, preferredNodeId: String? = nil) async throws {
+        guard !isProvisioning else { return }
+        isProvisioning = true
+        defer { isProvisioning = false }
+        await stopAllActiveTunnels()
+        status = .connecting
+
+        if isMultiHop { await revokeAllPeers() }
+
+        // Servers list gives us endpoint metadata for the NE profile install step.
+        let allServers = (try? await APIClient.shared.fetchServers()) ?? []
+
+        let pubkey = try ensureKeypair()
+        let label  = "WraithVPN-\(UIDevice.current.name.prefix(20))"
+
+        let existingPeerId = activePeerId ?? KeychainHelper.shared.readOptional(for: .activePeerId)
+        let provision: ProvisionResponse
+        if let fromPeerId = existingPeerId {
+            do {
+                provision = try await APIClient.shared.switchPeer(
+                    fromPeerId: fromPeerId,
+                    pubkey:     pubkey,
+                    regionId:   regionId,
+                    nodeId:     preferredNodeId,
+                    label:      label
+                )
+            } catch let error as APIError {
+                if case .httpError(let code, _) = error, code == 404 {
+                    KeychainHelper.shared.delete(for: .activePeerId)
+                    KeychainHelper.shared.delete(for: .activeNodeId)
+                    provision = try await APIClient.shared.provisionPeer(
+                        pubkey: pubkey, regionId: regionId, nodeId: preferredNodeId, label: label)
+                } else { throw error }
+            }
+        } else {
+            provision = try await APIClient.shared.provisionPeer(
+                pubkey: pubkey, regionId: regionId, nodeId: preferredNodeId, label: label)
+        }
+
+        // Resolve the returned nodeId to a full VPNServer so installProfile has
+        // endpoint / displayName metadata. Falls back to a stub if the node was
+        // added between list fetch and provision.
+        let server = allServers.first(where: { $0.nodeId == provision.nodeId })
+            ?? VPNServer.stub(nodeId: provision.nodeId, region: regionId)
+
+        let config = try injectPrivateKey(into: provision.config)
+        try await installProfile(configText: config, server: server)
+
+        activePeerId    = provision.peerId
+        assignedIP      = provision.assignedIpv4
+        exitIP          = provision.exitIpv4 ?? (server.ipv4.isEmpty ? nil : server.ipv4)
+        connectedServer = server
+        isProvisioned   = true
+        NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
+        try? KeychainHelper.shared.save(provision.peerId,  for: .activePeerId)
+        try? KeychainHelper.shared.save(provision.nodeId,  for: .activeNodeId)
+        try? KeychainHelper.shared.save(regionId,          for: .activeRegion)
+        if !provision.assignedIpv4.isEmpty {
+            try? KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
+        }
+        if let ip = exitIP { try? KeychainHelper.shared.save(ip, for: .wgExitIP) }
+        DebugLogger.shared.peer("Region connect: region=\(regionId) → node=\(provision.nodeId) peer=\(provision.peerId)")
+
+        await applyOnDemand(autoConnectEnabled)
+        try? await manager?.loadFromPreferences()
+        try startTunnel()
+    }
+
+    /// Layer 2 silent rebalance. Consumes a `PreferredNodeHint` returned by
+    /// `/v1/token/info` and migrates the tunnel to the suggested node — but only
+    /// when safe: same region (sticky rule), single-hop, already connected, no
+    /// provision already in flight. Failures are logged and swallowed (hint is
+    /// advisory, not mandatory).
+    func applyPreferredNodeIfIdle(_ hint: PreferredNodeHint) async {
+        guard isProvisioned,
+              !isProvisioning,
+              !isMultiHop,
+              connectedServer?.region == hint.region,
+              connectedServer?.nodeId != hint.nodeId
+        else { return }
+        guard case .connected = status else { return }
+        do {
+            DebugLogger.shared.peer("Layer2 rebalance: \(connectedServer?.nodeId ?? "?") → \(hint.nodeId) (\(hint.reason))")
+            try await connectToRegion(hint.region, preferredNodeId: hint.nodeId)
+        } catch {
+            DebugLogger.shared.peer("Layer2 rebalance failed: \(error)")
+        }
+    }
+
     /// Provisions a multi-hop (Enclave+) tunnel to the given entry and exit nodes,
     /// installs the profile, then connects.
     func connectMultiHop(entry: VPNServer, exit: VPNServer) async throws {
@@ -526,7 +621,7 @@ final class WireGuardManager: ObservableObject {
         let label     = "WraithVPN-\(UIDevice.current.name.prefix(20))"
         let provision = try await APIClient.shared.provisionPeer(
             pubkey: pubkey,
-            region: server.region,
+            regionId: server.region,
             nodeId: server.nodeId,
             label:  label
         )
@@ -557,7 +652,7 @@ final class WireGuardManager: ObservableObject {
         let provision = try await APIClient.shared.switchPeer(
             fromPeerId: fromPeerId,
             pubkey:     pubkey,
-            region:     server.region,
+            regionId:   server.region,
             nodeId:     server.nodeId,
             label:      label
         )

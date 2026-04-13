@@ -47,7 +47,7 @@ struct ConnectVPNIntent: AppIntent {
             let label = "WraithVPN-Intent"
             let provision = try await APIClient.shared.provisionPeer(
                 pubkey: pubkey,
-                region: nearest.region,
+                regionId: nearest.region,
                 nodeId: nearest.nodeId,
                 label: label
             )

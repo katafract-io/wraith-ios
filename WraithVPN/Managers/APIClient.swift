@@ -106,19 +106,31 @@ final class APIClient {
         try await request(APIRequest(.GET, "/v1/servers/nearest", auth: true))
     }
 
+    /// Returns the list of regions with at least one healthy VPN node.
+    /// Phase F — clients pick a region, server picks the best node inside it.
+    func fetchRegions() async throws -> [RegionSummary] {
+        let resp: RegionsResponse = try await request(APIRequest(.GET, "/v1/regions", auth: true))
+        return resp.regions
+    }
+
     /// Provisions a new WireGuard peer and returns the full config.
     /// Uses provision.katafract.com (direct, non-CF-proxied) so this works even
     /// when the VPN tunnel is active — the provisioning endpoint is excluded from
     /// the split tunnel AllowedIPs.
-    func provisionPeer(pubkey: String, region: String?, nodeId: String? = nil, label: String) async throws -> ProvisionResponse {
-        let body = ProvisionRequest(clientPubkey: pubkey, region: region, nodeId: nodeId, label: label)
+    ///
+    /// `regionId` is the Phase F sticky region selector:
+    /// - `"auto"` / nil → server geoip-picks nearest region
+    /// - explicit region id (e.g. `"us-east"`) → HARD boundary, server never crosses
+    /// `nodeId` is an optional preferred-node hint, only honored when in-region.
+    func provisionPeer(pubkey: String, regionId: String?, nodeId: String? = nil, label: String) async throws -> ProvisionResponse {
+        let body = ProvisionRequest(clientPubkey: pubkey, regionId: regionId, nodeId: nodeId, label: label)
         return try await request(APIRequest(.POST, "/v1/peers/provision", body: body, auth: true), baseOverride: provisionURL)
     }
 
     /// Atomically revokes an existing peer and provisions a new one on a different node.
     /// Uses the same device slot — does not consume an additional seat.
-    func switchPeer(fromPeerId: String, pubkey: String, region: String?, nodeId: String? = nil, label: String) async throws -> ProvisionResponse {
-        let body = SwitchPeerRequest(fromPeerId: fromPeerId, region: region, nodeId: nodeId, label: label, clientPubkey: pubkey)
+    func switchPeer(fromPeerId: String, pubkey: String, regionId: String?, nodeId: String? = nil, label: String) async throws -> ProvisionResponse {
+        let body = SwitchPeerRequest(fromPeerId: fromPeerId, regionId: regionId, nodeId: nodeId, label: label, clientPubkey: pubkey)
         return try await request(APIRequest(.POST, "/v1/peers/switch", body: body, auth: true), baseOverride: provisionURL)
     }
 

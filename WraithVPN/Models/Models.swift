@@ -85,13 +85,13 @@ enum RegionInfo {
 
 struct ProvisionRequest: Encodable {
     let clientPubkey: String
-    let region: String?
-    let nodeId: String?
+    let regionId: String?   // Phase F: sticky region — "auto" or explicit region id (hard boundary server-side)
+    let nodeId: String?     // Optional preferred node hint — only honored when in-region
     let label: String
 
     enum CodingKeys: String, CodingKey {
         case clientPubkey = "client_pubkey"
-        case region
+        case regionId     = "region_id"
         case nodeId       = "node_id"
         case label
     }
@@ -163,14 +163,14 @@ struct MultiHopProvisionResponse: Decodable {
 
 struct SwitchPeerRequest: Encodable {
     let fromPeerId: String
-    let region: String?
+    let regionId: String?
     let nodeId: String?
     let label: String
     let clientPubkey: String?
 
     enum CodingKeys: String, CodingKey {
         case fromPeerId   = "from_peer_id"
-        case region
+        case regionId     = "region_id"
         case nodeId       = "node_id"
         case label
         case clientPubkey = "client_pubkey"
@@ -211,6 +211,48 @@ struct PeerListResponse: Decodable {
     }
 }
 
+// MARK: - Region listing (GET /v1/regions)
+
+struct RegionSummary: Decodable, Identifiable {
+    let id: String           // e.g. "us-east", "eu-west"
+    let label: String        // human-readable — "US East", "Tokyo"
+    let continent: String    // "NA", "EU", "AS", "SA", "OC", "AF"
+    let lat: Double
+    let lon: Double
+    let healthyNodeCount: Int
+    let avgLoadScore: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case label
+        case continent
+        case lat
+        case lon
+        case healthyNodeCount = "healthy_node_count"
+        case avgLoadScore     = "avg_load_score"
+    }
+}
+
+struct RegionsResponse: Decodable {
+    let regions: [RegionSummary]
+}
+
+// MARK: - Layer 2 preferred-node hint (embedded in TokenInfoResponse)
+
+struct PreferredNodeHint: Decodable, Equatable {
+    let nodeId: String
+    let region: String
+    let loadScore: Int
+    let reason: String
+
+    enum CodingKeys: String, CodingKey {
+        case nodeId    = "node_id"
+        case region
+        case loadScore = "load_score"
+        case reason
+    }
+}
+
 // MARK: - Token info (GET /v1/token/info)
 
 struct TokenInfoResponse: Decodable {
@@ -219,21 +261,24 @@ struct TokenInfoResponse: Decodable {
     let isAdmin: Bool
     let expiresAt: String?  // nil for founders (never expire)
     let maxPeers: Int
+    let preferredNode: PreferredNodeHint?   // Phase F Layer 2 hint — silent rebalance target
 
     enum CodingKeys: String, CodingKey {
         case plan
-        case isFounder = "is_founder"
-        case isAdmin   = "is_admin"
-        case expiresAt = "expires_at"
-        case maxPeers  = "max_peers"
+        case isFounder     = "is_founder"
+        case isAdmin       = "is_admin"
+        case expiresAt     = "expires_at"
+        case maxPeers      = "max_peers"
+        case preferredNode = "preferred_node"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        plan      = try c.decode(String.self, forKey: .plan)
-        isFounder = try c.decode(Bool.self,   forKey: .isFounder)
-        isAdmin   = (try? c.decode(Bool.self, forKey: .isAdmin)) ?? false
-        maxPeers  = try c.decode(Int.self,    forKey: .maxPeers)
+        plan          = try c.decode(String.self, forKey: .plan)
+        isFounder     = try c.decode(Bool.self,   forKey: .isFounder)
+        isAdmin       = (try? c.decode(Bool.self, forKey: .isAdmin)) ?? false
+        maxPeers      = try c.decode(Int.self,    forKey: .maxPeers)
+        preferredNode = try? c.decode(PreferredNodeHint.self, forKey: .preferredNode)
         if let ts = try? c.decode(Int.self, forKey: .expiresAt) {
             expiresAt = ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: TimeInterval(ts)))
         } else {
