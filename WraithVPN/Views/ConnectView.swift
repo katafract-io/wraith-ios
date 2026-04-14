@@ -51,6 +51,7 @@ struct ConnectView: View {
         .sheet(isPresented: $showRegionPicker) {
             RegionPickerView()
                 .environmentObject(vpn)
+                .environmentObject(servers)
         }
         .sheet(isPresented: $showMultiHopPicker) {
             MultiHopPickerSheet()

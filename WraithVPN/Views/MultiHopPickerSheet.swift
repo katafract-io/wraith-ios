@@ -314,62 +314,135 @@ struct MultiHopPickerSheet: View {
 
     private func serverList(for role: HopRole) -> some View {
         let opposite: VPNServer? = role == .entry ? exitServer : entryServer
-        let list = servers.servers.sorted {
-            switch ($0.milliseconds, $1.milliseconds) {
-            case (let a?, let b?): return a < b
-            case (.some, nil):     return true
-            case (nil, .some):     return false
-            case (nil, nil):       return $0.server.loadScore < $1.server.loadScore
+
+        // Group servers by region
+        let grouped = Dictionary(grouping: servers.servers, by: { $0.server.region })
+        let sortedRegions = grouped.keys.sorted { r1, r2 in
+            // Sort regions by best ping in each, or load if tied
+            let bestPing1 = grouped[r1]?.compactMap(\.milliseconds).min() ?? Double.infinity
+            let bestPing2 = grouped[r2]?.compactMap(\.milliseconds).min() ?? Double.infinity
+            if abs(bestPing1 - bestPing2) < 5 {
+                let load1 = grouped[r1]?.map(\.server.loadScore).min() ?? Int.max
+                let load2 = grouped[r2]?.map(\.server.loadScore).min() ?? Int.max
+                return load1 < load2
             }
+            return bestPing1 < bestPing2
         }
 
-        return ScrollView {
-            LazyVStack(spacing: KFSpacing.xs) {
-                ForEach(list) { item in
-                    let isOpposite = item.server.nodeId == opposite?.nodeId
-                    Button {
-                        if role == .entry { entryServer = item.server }
-                        else { exitServer = item.server }
-                        pickingRole = nil
-                    } label: {
-                        HStack(spacing: KFSpacing.md) {
-                            Text(item.server.flagEmoji)
-                                .font(.system(size: 22))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.server.cityName)
-                                    .font(KFFont.heading(15))
-                                    .foregroundStyle(isOpposite ? Color.kfTextMuted : .white)
-                                if isOpposite {
-                                    Text("Already selected as \(role == .entry ? "exit" : "entry")")
-                                        .font(KFFont.caption(12))
+        return ScrollView(showsIndicators: false) {
+            LazyVStack(spacing: KFSpacing.sm) {
+                ForEach(sortedRegions, id: \.self) { region in
+                    regionGroup(region: region, opposite: opposite, for: role)
+                }
+            }
+            .padding(.horizontal, KFSpacing.md)
+            .padding(.vertical, KFSpacing.sm)
+        }
+    }
+
+    private func regionGroup(region: String, opposite: VPNServer?, for role: HopRole) -> some View {
+        let regionServers = servers.servers
+            .filter { $0.server.region == region }
+            .sorted {
+                switch ($0.milliseconds, $1.milliseconds) {
+                case (let a?, let b?): return a < b
+                case (.some, nil):     return true
+                case (nil, .some):     return false
+                case (nil, nil):       return $0.server.loadScore < $1.server.loadScore
+                }
+            }
+
+        let bestPing = regionServers.compactMap(\.milliseconds).min()
+
+        return VStack(spacing: 0) {
+            DisclosureGroup(regionLabel(region, bestPing: bestPing)) {
+                LazyVStack(spacing: KFSpacing.xs) {
+                    ForEach(regionServers) { item in
+                        let isOpposite = item.server.nodeId == opposite?.nodeId
+                        Button {
+                            if role == .entry { entryServer = item.server }
+                            else { exitServer = item.server }
+                            pickingRole = nil
+                        } label: {
+                            HStack(spacing: KFSpacing.md) {
+                                Text(item.server.flagEmoji)
+                                    .font(.system(size: 22))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.server.cityName)
+                                        .font(KFFont.heading(15))
+                                        .foregroundStyle(isOpposite ? Color.kfTextMuted : .white)
+                                    if isOpposite {
+                                        Text("Already selected as \(role == .entry ? "exit" : "entry")")
+                                            .font(KFFont.caption(12))
+                                            .foregroundStyle(Color.kfTextMuted)
+                                    }
+                                }
+                                Spacer()
+                                if let ms = item.milliseconds {
+                                    Text("\(Int(ms)) ms")
+                                        .font(KFFont.mono(12))
+                                        .foregroundStyle(latencyColor(ms))
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(latencyColor(ms).opacity(0.12))
+                                        .clipShape(Capsule())
+                                } else {
+                                    Text("—")
+                                        .font(KFFont.mono(12))
                                         .foregroundStyle(Color.kfTextMuted)
                                 }
                             }
-                            Spacer()
-                            if let ms = item.milliseconds {
-                                Text("\(Int(ms)) ms")
-                                    .font(KFFont.mono(12))
-                                    .foregroundStyle(latencyColor(ms))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(latencyColor(ms).opacity(0.12))
-                                    .clipShape(Capsule())
-                            }
+                            .padding(KFSpacing.md)
+                            .background(Color.kfSurface)
+                            .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous)
+                                    .stroke(isOpposite ? Color.kfBorder.opacity(0.4) : Color.kfBorder, lineWidth: 1)
+                            )
+                            .opacity(isOpposite ? 0.5 : 1)
                         }
-                        .padding(KFSpacing.md)
-                        .background(Color.kfSurface)
-                        .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous)
-                                .stroke(isOpposite ? Color.kfBorder.opacity(0.4) : Color.kfBorder, lineWidth: 1)
-                        )
-                        .opacity(isOpposite ? 0.5 : 1)
+                        .disabled(isOpposite)
                     }
-                    .disabled(isOpposite)
-                    .padding(.horizontal, KFSpacing.md)
                 }
+                .padding(.vertical, KFSpacing.xs)
             }
-            .padding(.vertical, KFSpacing.sm)
+            .tint(.white)
+        }
+    }
+
+    private func regionLabel(_ regionId: String, bestPing: Double?) -> some View {
+        HStack(spacing: KFSpacing.sm) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(regionLabelForId(regionId))
+                    .font(KFFont.heading(15))
+                    .foregroundStyle(.white)
+            }
+            Spacer()
+            if let ping = bestPing {
+                Text("\(Int(ping)) ms")
+                    .font(KFFont.mono(13))
+                    .foregroundStyle(latencyColor(ping))
+            }
+        }
+        .padding(KFSpacing.md)
+        .background(Color.kfSurface.opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous)
+                .stroke(Color.kfBorder, lineWidth: 1)
+        )
+    }
+
+    private func regionLabelForId(_ regionId: String) -> String {
+        switch regionId {
+        case "us-east":      return "US East"
+        case "us-west":      return "US West"
+        case "eu-west":      return "EU West"
+        case "eu-north":     return "EU North"
+        case "ap-southeast": return "SE Asia"
+        case "ap-northeast": return "Japan"
+        case "ap-south":     return "India"
+        default:             return regionId
         }
     }
 

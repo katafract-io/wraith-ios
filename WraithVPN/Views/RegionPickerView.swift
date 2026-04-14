@@ -11,6 +11,7 @@ import SwiftUI
 struct RegionPickerView: View {
 
     @EnvironmentObject var vpn: WireGuardManager
+    @EnvironmentObject var servers: ServerListManager
     @Environment(\.dismiss) private var dismiss
 
     @State private var regions: [RegionSummary] = []
@@ -106,6 +107,12 @@ struct RegionPickerView: View {
     private var regionList: some View {
         ScrollView {
             LazyVStack(spacing: KFSpacing.sm) {
+                if shouldShowMeasuringIndicator {
+                    Text("Measuring latency…")
+                        .font(KFFont.caption(12))
+                        .foregroundStyle(Color.kfTextMuted)
+                        .padding(.top, KFSpacing.sm)
+                }
                 ForEach(sortedRegions) { region in
                     regionRow(region)
                 }
@@ -116,7 +123,9 @@ struct RegionPickerView: View {
     }
 
     private func regionRow(_ region: RegionSummary) -> some View {
-        Button {
+        let bestPing = bestPingMs(for: region)
+
+        return Button {
             Task { await connect(to: region) }
         } label: {
             HStack(spacing: KFSpacing.md) {
@@ -137,7 +146,18 @@ struct RegionPickerView: View {
 
                 Spacer()
 
-                loadBadge(score: region.avgLoadScore)
+                VStack(alignment: .trailing, spacing: 4) {
+                    if let ping = bestPing {
+                        Text("\(Int(ping)) ms")
+                            .font(KFFont.mono(13))
+                            .foregroundStyle(pingColor(ping))
+                    } else {
+                        Text("—")
+                            .font(KFFont.mono(13))
+                            .foregroundStyle(Color.kfTextMuted)
+                    }
+                    loadBadge(score: region.avgLoadScore)
+                }
 
                 if connecting == region.id {
                     ProgressView().tint(Color.kfAccentBlue)
@@ -181,11 +201,40 @@ struct RegionPickerView: View {
 
     // MARK: - Logic
 
+    private var shouldShowMeasuringIndicator: Bool {
+        // Show "Measuring latency…" if all nodes have nil ms and no error
+        servers.servers.allSatisfy { $0.milliseconds == nil } && servers.error == nil && !servers.servers.isEmpty
+    }
+
+    private func bestPingMs(for region: RegionSummary) -> Double? {
+        servers.servers
+            .filter { $0.server.region == region.id && $0.milliseconds != nil }
+            .min { ($0.milliseconds ?? Double.infinity) < ($1.milliseconds ?? Double.infinity) }?
+            .milliseconds
+    }
+
+    private func pingColor(_ ms: Double) -> Color {
+        switch ms {
+        case ..<80:  return Color(hex: "#22c55e")
+        case ..<180: return Color(hex: "#f59e0b")
+        default:     return Color(hex: "#ef4444")
+        }
+    }
+
     private var sortedRegions: [RegionSummary] {
+        // Sort by best ping in region (ascending), then by load score as tiebreaker
+        // (within 5ms difference, defer to load score; nils go to bottom)
         regions.sorted { a, b in
-            if a.avgLoadScore != b.avgLoadScore {
+            let pingA = bestPingMs(for: a) ?? Double.infinity
+            let pingB = bestPingMs(for: b) ?? Double.infinity
+
+            // If both have valid pings and differ by < 5ms, use load score
+            if pingA < Double.infinity && pingB < Double.infinity && abs(pingA - pingB) < 5 {
                 return a.avgLoadScore < b.avgLoadScore
             }
+            // Otherwise sort by ping (lower wins, nils last)
+            if pingA != pingB { return pingA < pingB }
+            // Fallback: alphabetical
             return a.label < b.label
         }
     }

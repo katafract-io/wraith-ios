@@ -89,6 +89,9 @@ final class WireGuardManager: ObservableObject {
     /// connect/disconnect/connect cycle cancels the stale check and only
     /// the most-recent stable connect runs the full suite.
     private var healthCheckTask: Task<Void, Never>?
+    /// Holds the current in-flight connect operation (provisionAndInstall or connectToServer).
+    /// Allows disconnect to cancel the connect Task and force immediate teardown.
+    private var connectTask: Task<Void, Error>?
 
     // MARK: - Phase E2.2 latency reporting + periodic Layer 2
 
@@ -181,6 +184,10 @@ final class WireGuardManager: ObservableObject {
     /// - Different node + existing peer: atomic switch (no extra slot consumed).
     /// - No existing peer, or stale peer (404): fresh provision.
     func connectToServer(_ server: VPNServer) async throws {
+        // Cancel any prior connect Task and replace with this one so disconnect()
+        // can cancel the operation if the user taps disconnect while connecting.
+        connectTask?.cancel()
+
         // Prevent concurrent provision/switch operations.
         guard !isProvisioning else { return }
         isProvisioning = true
@@ -242,6 +249,9 @@ final class WireGuardManager: ObservableObject {
     /// `preferredNodeId` is an optional hint honored only when in-region — used by
     /// the Layer 2 rebalance path.
     func connectToRegion(_ regionId: String, preferredNodeId: String? = nil) async throws {
+        // Cancel any prior connect Task so disconnect() can cancel the operation.
+        connectTask?.cancel()
+
         guard !isProvisioning else { return }
         isProvisioning = true
         defer { isProvisioning = false }
@@ -458,6 +468,9 @@ final class WireGuardManager: ObservableObject {
     /// Provisions a multi-hop (Enclave+) tunnel to the given entry and exit nodes,
     /// installs the profile, then connects.
     func connectMultiHop(entry: VPNServer, exit: VPNServer) async throws {
+        // Cancel any prior connect Task so disconnect() can cancel the operation.
+        connectTask?.cancel()
+
         guard !isProvisioning else { return }
         isProvisioning = true
         defer { isProvisioning = false }
@@ -590,11 +603,17 @@ final class WireGuardManager: ObservableObject {
     }
 
     /// Disconnects the active tunnel.
+    /// Cancels any in-flight connect Task and forces immediate teardown.
     /// Temporarily disables on-demand so iOS doesn't immediately reconnect,
     /// while leaving the user's autoConnectEnabled preference intact.
     func disconnect() {
         reprovisionAttempts = 0
         status = .disconnecting
+
+        // Cancel any in-flight connect Task (provision/switch) so the UI responds immediately
+        connectTask?.cancel()
+        connectTask = nil
+
         let session = tunnelProviderSession
         // Disable OnDemand BEFORE stopping — if we stop first, iOS fires the
         // OnDemand rule immediately and reconnects before applyOnDemand finishes.
