@@ -46,8 +46,11 @@ struct MultiHopPickerSheet: View {
 
         guard all.count >= 2 else { return nil }
         let first = all[0]
-        // Pick second from a DIFFERENT region so the two hops are geographically separated
-        guard let second = all.first(where: { $0.region != first.region }) else { return nil }
+        // Prefer a different region for geographic separation, but fall back to any
+        // different node so auto-mode always yields a valid pair when 2+ nodes exist.
+        let second = all.first(where: { $0.region != first.region })
+                  ?? all.first(where: { $0.nodeId != first.nodeId })
+        guard let second else { return nil }
         return (entry: first, exit: second)
     }
 

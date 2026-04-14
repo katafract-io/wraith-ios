@@ -52,32 +52,48 @@ struct VPNServer: Codable, Identifiable, Hashable {
 
     // Human-readable city name for the UI (falls back to displayName)
     var cityName: String {
-        RegionInfo.cityName(for: region)
+        RegionInfo.cityName(site: site, region: region)
     }
 
     var flagEmoji: String {
-        RegionInfo.flag(for: region)
+        RegionInfo.flag(site: site, region: region)
     }
 }
 
 // MARK: - Region metadata
 
 enum RegionInfo {
+    // Site-level map — keyed on `site` which is unique per node. Preferred source.
+    static let siteMap: [String: (city: String, flag: String)] = [
+        "ash":  ("Ashburn",   "🇺🇸"),
+        "ewr1": ("Newark",    "🇺🇸"),
+        "hil":  ("Hillsboro", "🇺🇸"),
+        "nbg1": ("Nuremberg", "🇩🇪"),
+        "hel1": ("Helsinki",  "🇫🇮"),
+        "sgp2": ("Singapore", "🇸🇬"),
+        "sgp3": ("Singapore", "🇸🇬"),
+        "nrt1": ("Tokyo",     "🇯🇵"),
+        "bom1": ("Mumbai",    "🇮🇳"),
+    ]
+
+    // Region-level fallback — used only when site is unknown to this client.
     static let regionMap: [String: (city: String, flag: String)] = [
         "eu-west":      ("Frankfurt",  "🇩🇪"),
         "eu-north":     ("Helsinki",   "🇫🇮"),
         "ap-southeast": ("Singapore",  "🇸🇬"),
-        "us-central":   ("Missouri",     "🇺🇸"),
+        "ap-northeast": ("Tokyo",      "🇯🇵"),
+        "ap-south":     ("Mumbai",     "🇮🇳"),
+        "us-central":   ("Missouri",   "🇺🇸"),
         "us-east":      ("Virginia",   "🇺🇸"),
         "us-west":      ("Oregon",     "🇺🇸"),
     ]
 
-    static func cityName(for region: String) -> String {
-        regionMap[region]?.city ?? region
+    static func cityName(site: String, region: String) -> String {
+        siteMap[site]?.city ?? regionMap[region]?.city ?? region
     }
 
-    static func flag(for region: String) -> String {
-        regionMap[region]?.flag ?? "🌐"
+    static func flag(site: String, region: String) -> String {
+        siteMap[site]?.flag ?? regionMap[region]?.flag ?? "🌐"
     }
 }
 
