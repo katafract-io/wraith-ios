@@ -305,13 +305,21 @@ final class WireGuardManager: ObservableObject {
         connectedServer = server
         isProvisioned   = true
         NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
-        try? KeychainHelper.shared.save(provision.peerId,  for: .activePeerId)
-        try? KeychainHelper.shared.save(provision.nodeId,  for: .activeNodeId)
-        try? KeychainHelper.shared.save(regionId,          for: .activeRegion)
-        if !provision.assignedIpv4.isEmpty {
-            try? KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
+        do {
+            try KeychainHelper.shared.save(provision.peerId, for: .activePeerId)
+            try KeychainHelper.shared.save(provision.nodeId, for: .activeNodeId)
+            try KeychainHelper.shared.save(regionId,         for: .activeRegion)
+            if !provision.assignedIpv4.isEmpty {
+                try KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
+            }
+            if let ip = exitIP { try KeychainHelper.shared.save(ip, for: .wgExitIP) }
+        } catch {
+            // A silent Keychain save failure is exactly how orphan profiles are born:
+            // NE profile installs successfully but peerId never makes it to Keychain,
+            // so the next launch loads the profile with peerId=nil and the user has
+            // to manually reset the VPN config. Surface this so we can see it.
+            DebugLogger.shared.peer("CRITICAL: Keychain save failed for peerId=\(provision.peerId): \(error.localizedDescription)")
         }
-        if let ip = exitIP { try? KeychainHelper.shared.save(ip, for: .wgExitIP) }
         DebugLogger.shared.peer("Region connect: region=\(regionId) → node=\(provision.nodeId) peer=\(provision.peerId)")
 
         await applyOnDemand(autoConnectEnabled)
@@ -583,10 +591,12 @@ final class WireGuardManager: ObservableObject {
             // Profile is stale (e.g. signing identity changed after rebuild,
             // or concurrent provision left the NE manager in an invalid state).
             // Remove the stale profile and re-provision to the nearest server.
+            // Do NOT clear Keychain peerId until the new provision succeeds —
+            // otherwise a failed provision leaves an orphan profile + nil peerId
+            // state that the load-time orphan guard would only heal on next launch.
+            // provisionAndInstall overwrites Keychain on success.
             await removeProfile()
             isProvisioned = false
-            activePeerId  = nil
-            KeychainHelper.shared.delete(for: .activePeerId)
             let nearest = try await APIClient.shared.fetchNearestServer()
             try await provisionAndInstall(server: nearest)
             await applyOnDemand(autoConnectEnabled)
@@ -737,16 +747,15 @@ final class WireGuardManager: ObservableObject {
         TelemetryManager.shared.recordReprovision()
         DebugLogger.shared.wg("Health check FAILED: soft reconnect insufficient. Full reprovision (attempt \(reprovisionAttempts)/\(maxReprovisionAttempts))...")
 
-        // Tear down the dead tunnel and re-provision
+        // Tear down the dead tunnel and re-provision.
+        // Do NOT clear Keychain peerId/nodeId here — provisionAndInstall overwrites
+        // them on success. Clearing eagerly leaves an orphan-state combination
+        // (NE profile present, Keychain peerId nil) when provision fails, which
+        // forces the user to manually reset the VPN config.
         manager?.connection.stopVPNTunnel()
         try? await Task.sleep(for: .milliseconds(500))
-
-        // Clear stale peer info
-        KeychainHelper.shared.delete(for: .activePeerId)
-        KeychainHelper.shared.delete(for: .activeNodeId)
-        activePeerId = nil
         connectedServer = nil
-        isProvisioned = false
+        isProvisioned   = false
 
         do {
             let nearest = try await APIClient.shared.fetchNearestServer()
@@ -825,13 +834,17 @@ final class WireGuardManager: ObservableObject {
         connectedServer = server
         isProvisioned   = true
         NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
-        try? KeychainHelper.shared.save(provision.peerId,  for: .activePeerId)
-        try? KeychainHelper.shared.save(provision.nodeId,  for: .activeNodeId)
-        try? KeychainHelper.shared.save(server.region,     for: .activeRegion)
-        if let ip = provision.assignedIpv4.isEmpty ? nil : Optional(provision.assignedIpv4) {
-            try? KeychainHelper.shared.save(ip, for: .wgAssignedIP)
+        do {
+            try KeychainHelper.shared.save(provision.peerId, for: .activePeerId)
+            try KeychainHelper.shared.save(provision.nodeId, for: .activeNodeId)
+            try KeychainHelper.shared.save(server.region,    for: .activeRegion)
+            if !provision.assignedIpv4.isEmpty {
+                try KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
+            }
+            if let ip = exitIP { try KeychainHelper.shared.save(ip, for: .wgExitIP) }
+        } catch {
+            DebugLogger.shared.peer("CRITICAL: Keychain save failed for peerId=\(provision.peerId): \(error.localizedDescription)")
         }
-        if let ip = exitIP { try? KeychainHelper.shared.save(ip, for: .wgExitIP) }
         DebugLogger.shared.peer("Provisioned: peerId=\(provision.peerId) ip=\(provision.assignedIpv4) node=\(provision.nodeId) exit=\(exitIP ?? "nil")")
     }
 
@@ -854,13 +867,17 @@ final class WireGuardManager: ObservableObject {
         connectedServer = server
         isProvisioned   = true
         NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
-        try? KeychainHelper.shared.save(provision.peerId,  for: .activePeerId)
-        try? KeychainHelper.shared.save(provision.nodeId,  for: .activeNodeId)
-        try? KeychainHelper.shared.save(server.region,     for: .activeRegion)
-        if !provision.assignedIpv4.isEmpty {
-            try? KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
+        do {
+            try KeychainHelper.shared.save(provision.peerId, for: .activePeerId)
+            try KeychainHelper.shared.save(provision.nodeId, for: .activeNodeId)
+            try KeychainHelper.shared.save(server.region,    for: .activeRegion)
+            if !provision.assignedIpv4.isEmpty {
+                try KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
+            }
+            if let ip = exitIP { try KeychainHelper.shared.save(ip, for: .wgExitIP) }
+        } catch {
+            DebugLogger.shared.peer("CRITICAL: Keychain save failed for peerId=\(provision.peerId) (switch): \(error.localizedDescription)")
         }
-        if let ip = exitIP { try? KeychainHelper.shared.save(ip, for: .wgExitIP) }
     }
 
     /// Replaces an empty/missing PrivateKey line in a wg-quick config with the
@@ -921,6 +938,22 @@ final class WireGuardManager: ObservableObject {
                     connectedServer = VPNServer.stub(nodeId: nodeId, region: region)
                 }
                 DebugLogger.shared.ne("Loaded existing NE profile, peerId=\(activePeerId ?? "nil")")
+
+                // Orphan-profile guard: NE profile exists but Keychain has no peerId
+                // for either single-hop or multi-hop. This happens when a prior
+                // provision/switch deleted the Keychain entry but the new provision
+                // failed (e.g. backend 5xx) and left the dead NE profile installed.
+                // Without this guard the app loops forever calling /peers/switch with
+                // a nil source peer. Remove the orphan so autoProvisionIfNeeded fires
+                // a fresh provision on next entry to ConnectView.
+                let hasMultiHopState = KeychainHelper.shared.readOptional(for: .multiHopEntryPeerId) != nil
+                if activePeerId == nil && !hasMultiHopState {
+                    DebugLogger.shared.ne("Orphan NE profile (no peerId in Keychain). Removing and re-provisioning.")
+                    await removeProfile()
+                    isProvisioned   = false
+                    connectedServer = nil
+                    return
+                }
 
                 // Verify the peer is still active on the backend. If it was revoked
                 // (all peers deleted, TTL reap, etc.) the NE profile is stale and
