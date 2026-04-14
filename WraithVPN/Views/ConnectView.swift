@@ -268,7 +268,7 @@ struct ConnectView: View {
                 if vpn.isMultiHop, let entry = vpn.multiHopEntryServer, let exit = vpn.multiHopExitServer {
                     summaryPill(
                         title: "Route",
-                        value: "\(entry.cityName) → \(exit.cityName)",
+                        value: "\(entry.cityName)\n→ \(exit.cityName)",
                         icon: "arrow.triangle.2.circlepath"
                     )
                 } else {
