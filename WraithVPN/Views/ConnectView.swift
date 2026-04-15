@@ -22,7 +22,7 @@ struct ConnectView: View {
     @State private var showError          = false
     @State private var upgradeReason: UpgradeReason? = nil
     @State private var showHopSwitchConfirm    = false
-    @State private var hopSwitchRevertValue    = false   // old multiHopMode to restore on cancel
+    @State private var pendingHopMode: Bool?   = nil     // desired mode pending disconnect confirmation
     @State private var suppressNextHopModeChange = false
 
     private var isAnimatingRing: Bool {
@@ -85,6 +85,19 @@ struct ConnectView: View {
         .onChange(of: vpn.isMultiHop) { _, newValue in
             if newValue { multiHopMode = true }
         }
+        .onChange(of: vpn.status) { _, newStatus in
+            guard newStatus == .disconnected, let pending = pendingHopMode else { return }
+            pendingHopMode = nil
+            suppressNextHopModeChange = true
+            multiHopMode = pending
+            hopModeExplicitlySet = true
+            // Auto-open the appropriate picker to complete the mode switch
+            if pending {
+                showMultiHopPicker = true
+            } else {
+                showRegionPicker = true
+            }
+        }
         .onChange(of: storeKit.hasMultiHop) { _, _ in
             applyDefaultHopMode()
         }
@@ -95,13 +108,17 @@ struct ConnectView: View {
             }
             if newValue && !storeKit.hasMultiHop {
                 upgradeReason = .multiHopRequiresPlus
+                suppressNextHopModeChange = true
                 multiHopMode = false
                 return
             }
             hopModeExplicitlySet = true
-            if vpn.status == .connected {
-                // Intercept — show confirmation before disconnecting
-                hopSwitchRevertValue = oldValue
+            if vpn.status == .connected || vpn.status == .connecting {
+                // Snap back immediately — slider must always reflect actual connection state
+                suppressNextHopModeChange = true
+                multiHopMode = oldValue
+                // Store desired mode; will apply after confirmed disconnect
+                pendingHopMode = newValue
                 showHopSwitchConfirm = true
             }
         }
@@ -109,15 +126,15 @@ struct ConnectView: View {
             "Disconnect to Switch Mode?",
             isPresented: $showHopSwitchConfirm
         ) {
-            Button("Switch & Disconnect", role: .destructive) {
+            Button("Disconnect & Switch", role: .destructive) {
                 vpn.disconnect()
+                // pendingHopMode is set; onChange(of: vpn.status) will apply it after disconnect
             }
             Button("Cancel", role: .cancel) {
-                suppressNextHopModeChange = true
-                multiHopMode = hopSwitchRevertValue
+                pendingHopMode = nil
             }
         } message: {
-            let target = multiHopMode ? "Multi-Hop" : "Single Hop"
+            let target = (pendingHopMode ?? !multiHopMode) ? "Multi-Hop" : "Single Hop"
             Text("Switching to \(target) requires disconnecting your current VPN session.")
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: vpn.status == .connected)
