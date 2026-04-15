@@ -55,8 +55,6 @@
 		AATST204 /* ServerListManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AATST104 /* ServerListManagerTests.swift */; };
 		AATST205 /* HavenDNSManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AATST105 /* HavenDNSManagerTests.swift */; };
 		BBMAC050 /* WraithVPNMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC010 /* WraithVPNMacApp.swift */; };
-		BBMAC051 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC011 /* MenuBarView.swift */; };
-		BBMAC052 /* MenuBarLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC012 /* MenuBarLabel.swift */; };
 		BBMAC053 /* TokenEntryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC013 /* TokenEntryView.swift */; };
 		BBMAC054 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100009 /* APIClient.swift */; };
 		BBMAC055 /* StoreKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100011 /* StoreKitManager.swift */; };
@@ -64,7 +62,6 @@
 		BBMAC057 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100013 /* KeychainHelper.swift */; };
 		BBMAC058 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100008 /* Models.swift */; };
 		BBMAC060 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = BBMAC015 /* PrivacyInfo.xcprivacy */; };
-		BBMAC061 /* VPNConfigManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC016B /* VPNConfigManager.swift */; };
 		BBMAC062 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA100015 /* Assets.xcassets */; };
 		BBMAC063 /* WireGuardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100010 /* WireGuardManager.swift */; };
 		BBMAC064 /* ServerListManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100012 /* ServerListManager.swift */; };
@@ -72,6 +69,12 @@
 		BBMAC066 /* MainMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC020 /* MainMenuView.swift */; };
 		BBMAC067 /* MacAccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC021 /* MacAccountView.swift */; };
 		BBMAC100 /* MacMainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC025 /* MacMainView.swift */; };
+		BBMACNFW001 /* MacRegionPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMACNEW001 /* MacRegionPickerView.swift */; };
+		BBMACNFW002 /* MacMultiHopPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMACNEW002 /* MacMultiHopPickerView.swift */; };
+		BBMACNFW003 /* MacHavenDNSSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMACNEW003 /* MacHavenDNSSettingsView.swift */; };
+		BBMACNFW004 /* MacDnsStatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMACNEW004 /* MacDnsStatsView.swift */; };
+		BBMACNFW005 /* MacAchievementsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMACNEW005 /* MacAchievementsView.swift */; };
+		BBMACNFW006 /* MacUpgradeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMACNEW006 /* MacUpgradeSheet.swift */; };
 		BBMAC068 /* NetworkExtension.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA100030 /* NetworkExtension.framework */; };
 		BBMAC069 /* DebugLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100024 /* DebugLogger.swift */; };
 		BBMAC070 /* DNSHealthCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100025 /* DNSHealthCheck.swift */; };
@@ -216,16 +219,19 @@
 		AATST105 /* HavenDNSManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenDNSManagerTests.swift; sourceTree = "<group>"; };
 		AATST_PROD /* WraithVPNTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WraithVPNTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BBMAC010 /* WraithVPNMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WraithVPNMacApp.swift; sourceTree = "<group>"; };
-		BBMAC011 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
-		BBMAC012 /* MenuBarLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarLabel.swift; sourceTree = "<group>"; };
 		BBMAC013 /* TokenEntryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenEntryView.swift; sourceTree = "<group>"; };
 		BBMAC014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BBMAC015 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BBMAC016 /* WraithVPNMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WraithVPNMac.entitlements; sourceTree = "<group>"; };
-		BBMAC016B /* VPNConfigManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VPNConfigManager.swift; sourceTree = "<group>"; };
 		BBMAC020 /* MainMenuView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainMenuView.swift; sourceTree = "<group>"; };
 		BBMAC021 /* MacAccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccountView.swift; sourceTree = "<group>"; };
 		BBMAC025 /* MacMainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMainView.swift; sourceTree = "<group>"; };
+		BBMACNEW001 /* MacRegionPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRegionPickerView.swift; sourceTree = "<group>"; };
+		BBMACNEW002 /* MacMultiHopPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMultiHopPickerView.swift; sourceTree = "<group>"; };
+		BBMACNEW003 /* MacHavenDNSSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacHavenDNSSettingsView.swift; sourceTree = "<group>"; };
+		BBMACNEW004 /* MacDnsStatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDnsStatsView.swift; sourceTree = "<group>"; };
+		BBMACNEW005 /* MacAchievementsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAchievementsView.swift; sourceTree = "<group>"; };
+		BBMACNEW006 /* MacUpgradeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUpgradeSheet.swift; sourceTree = "<group>"; };
 		BBMACPROD001 /* WraithVPNMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WraithVPNMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = WireGuard.xcodeproj; sourceTree = "<group>"; };
 		BCC37CBF2F84CC2E00ABBF3E /* TestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = TestPlan.xctestplan; sourceTree = "<group>"; };
@@ -416,10 +422,13 @@
 				BBMAC020 /* MainMenuView.swift */,
 				BBMAC021 /* MacAccountView.swift */,
 				BBMAC025 /* MacMainView.swift */,
-				BBMAC011 /* MenuBarView.swift */,
-				BBMAC012 /* MenuBarLabel.swift */,
+				BBMACNEW001 /* MacRegionPickerView.swift */,
+				BBMACNEW002 /* MacMultiHopPickerView.swift */,
+				BBMACNEW003 /* MacHavenDNSSettingsView.swift */,
+				BBMACNEW004 /* MacDnsStatsView.swift */,
+				BBMACNEW005 /* MacAchievementsView.swift */,
+				BBMACNEW006 /* MacUpgradeSheet.swift */,
 				BBMAC013 /* TokenEntryView.swift */,
-				BBMAC016B /* VPNConfigManager.swift */,
 				BBMAC014 /* Info.plist */,
 				BBMAC015 /* PrivacyInfo.xcprivacy */,
 				BBMAC016 /* WraithVPNMac.entitlements */,
@@ -728,21 +737,24 @@
 			buildActionMask = 2147483647;
 			files = (
 				BBMAC050 /* WraithVPNMacApp.swift in Sources */,
-				BBMAC051 /* MenuBarView.swift in Sources */,
-				BBMAC052 /* MenuBarLabel.swift in Sources */,
 				BBMAC053 /* TokenEntryView.swift in Sources */,
 				BBMAC054 /* APIClient.swift in Sources */,
 				BBMAC055 /* StoreKitManager.swift in Sources */,
 				BBMAC056 /* HavenDNSManager.swift in Sources */,
 				BBMAC057 /* KeychainHelper.swift in Sources */,
 				BBMAC058 /* Models.swift in Sources */,
-				BBMAC061 /* VPNConfigManager.swift in Sources */,
 				BBMAC063 /* WireGuardManager.swift in Sources */,
 				BBMAC064 /* ServerListManager.swift in Sources */,
 				BBMAC065 /* DesignSystem.swift in Sources */,
 				BBMAC066 /* MainMenuView.swift in Sources */,
 				BBMAC067 /* MacAccountView.swift in Sources */,
 				BBMAC100 /* MacMainView.swift in Sources */,
+				BBMACNFW001 /* MacRegionPickerView.swift in Sources */,
+				BBMACNFW002 /* MacMultiHopPickerView.swift in Sources */,
+				BBMACNFW003 /* MacHavenDNSSettingsView.swift in Sources */,
+				BBMACNFW004 /* MacDnsStatsView.swift in Sources */,
+				BBMACNFW005 /* MacAchievementsView.swift in Sources */,
+				BBMACNFW006 /* MacUpgradeSheet.swift in Sources */,
 				BBMAC069 /* DebugLogger.swift in Sources */,
 				BBMAC070 /* DNSHealthCheck.swift in Sources */,
 				BBMAC071 /* TelemetryManager.swift in Sources */,

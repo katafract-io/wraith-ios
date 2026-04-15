@@ -9,6 +9,7 @@ struct TokenActivationSheet: View {
     @State private var isValidating  = false
     @State private var errorMessage: String? = nil
     @State private var statusMessage: String? = nil
+    @State private var canPaste: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -32,20 +33,41 @@ struct TokenActivationSheet: View {
                     }
 
                     VStack(alignment: .leading, spacing: KFSpacing.xs) {
-                        TextField("kf_...", text: $tokenInput)
-                            .font(KFFont.mono(13))
-                            .foregroundStyle(.white)
-                            .padding(KFSpacing.md)
-                            .background(Color.kfSurface)
-                            .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous)
-                                    .stroke(errorMessage != nil ? Color.red.opacity(0.6) : Color.kfBorder, lineWidth: 1)
-                            )
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                            .submitLabel(.done)
-                            .onSubmit { Task { await activate() } }
+                        HStack(spacing: KFSpacing.xs) {
+                            TextField("kf_...", text: $tokenInput)
+                                .font(KFFont.mono(13))
+                                .foregroundStyle(.white)
+                                .padding(KFSpacing.md)
+                                .background(Color.kfSurface)
+                                .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous)
+                                        .stroke(errorMessage != nil ? Color.red.opacity(0.6) : Color.kfBorder, lineWidth: 1)
+                                )
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .submitLabel(.done)
+                                .onSubmit { Task { await activate() } }
+
+                            if canPaste {
+                                Button {
+                                    if let s = UIPasteboard.general.string {
+                                        tokenInput = s
+                                    }
+                                } label: {
+                                    Image(systemName: "doc.on.clipboard")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(Color.kfAccentBlue)
+                                        .padding(KFSpacing.md)
+                                        .background(Color.kfSurface)
+                                        .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous)
+                                                .stroke(Color.kfBorder, lineWidth: 1)
+                                        )
+                                }
+                            }
+                        }
 
                         if let err = errorMessage {
                             Text(err)
@@ -92,6 +114,9 @@ struct TokenActivationSheet: View {
                 }
             }
             .preferredColorScheme(.dark)
+        }
+        .onAppear {
+            canPaste = UIPasteboard.general.hasStrings
         }
     }
 

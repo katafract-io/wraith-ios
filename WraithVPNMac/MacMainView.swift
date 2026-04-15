@@ -18,12 +18,21 @@ struct MacMainView: View {
     @State private var showServerList = false
     @State private var errorMessage: String?
     @State private var showError = false
+    @State private var showRegionPicker = false
+    @State private var showMultiHopPicker = false
+    @State private var showUpgradeSheet = false
+    @State private var upgradeReason: UpgradeReason = .vpnRequiresEnclave
+    @State private var multiHopEnabled = false
 
     var body: some View {
         VStack(spacing: 0) {
             statusSection
             Divider().background(Color.kfBorder)
             serverSection
+            if !simpleMode {
+                Divider().background(Color.kfBorder)
+                advancedSection
+            }
             Divider().background(Color.kfBorder)
             havenSection
             Divider().background(Color.kfBorder)
@@ -36,6 +45,20 @@ struct MacMainView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "Unknown error")
+        }
+        .sheet(isPresented: $showRegionPicker) {
+            MacRegionPickerView()
+                .environmentObject(vpn)
+                .environmentObject(servers)
+        }
+        .sheet(isPresented: $showMultiHopPicker) {
+            MacMultiHopPickerView()
+                .environmentObject(vpn)
+                .environmentObject(servers)
+        }
+        .sheet(isPresented: $showUpgradeSheet) {
+            MacUpgradeSheet(reason: upgradeReason)
+                .environmentObject(storeKit)
         }
         .task {
             await servers.refresh()
@@ -153,9 +176,25 @@ struct MacMainView: View {
                     }
                     Spacer()
                     if !simpleMode {
+                        // Region picker button
+                        Button {
+                            showRegionPicker = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(currentRegionLabel)
+                                    .font(KFFont.caption(11))
+                                    .foregroundStyle(Color.kfAccentBlue)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(Color.kfAccentBlue)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
                         Image(systemName: showServerList ? "chevron.up" : "chevron.down")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Color.kfTextMuted)
+                            .padding(.leading, 4)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -223,6 +262,101 @@ struct MacMainView: View {
             .background(isSelected ? Color.kfAccentBlue.opacity(0.08) : Color.clear)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Advanced section (kill switch, multi-hop, stay connected)
+
+    private var advancedSection: some View {
+        VStack(spacing: 0) {
+            // Kill Switch
+            HStack(spacing: 12) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.kfAccentPurple)
+                    .frame(width: 28, height: 28)
+                    .background(Color.kfAccentPurple.opacity(0.12))
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("KILL SWITCH")
+                        .font(KFFont.caption(9, weight: .bold))
+                        .kerning(1.2)
+                        .foregroundStyle(Color.kfTextMuted)
+                    Text("Block all traffic if tunnel drops")
+                        .font(KFFont.body(13))
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { vpn.tunnelMode == .full },
+                    set: { on in Task { await vpn.setTunnelMode(on ? .full : .standard) } }
+                ))
+                .toggleStyle(.switch)
+                .scaleEffect(0.8)
+                .tint(Color.kfAccentPurple)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+
+            Divider().background(Color.kfBorder).padding(.horizontal, 20)
+
+            // Multi-Hop toggle
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color(hex: "#f59e0b"))
+                    .frame(width: 28, height: 28)
+                    .background(Color(hex: "#f59e0b").opacity(0.12))
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MULTI-HOP")
+                        .font(KFFont.caption(9, weight: .bold))
+                        .kerning(1.2)
+                        .foregroundStyle(Color.kfTextMuted)
+                    Text(storeKit.hasMultiHop ? "Double-tunnel routing" : "Enclave+ feature")
+                        .font(KFFont.body(13))
+                        .foregroundStyle(storeKit.hasMultiHop ? .white : Color.kfTextMuted)
+                }
+                Spacer()
+                Toggle("", isOn: $multiHopEnabled)
+                    .toggleStyle(.switch)
+                    .scaleEffect(0.8)
+                    .tint(Color(hex: "#f59e0b"))
+                    .disabled(!storeKit.hasMultiHop)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+
+            Divider().background(Color.kfBorder).padding(.horizontal, 20)
+
+            // Stay Connected
+            HStack(spacing: 12) {
+                Image(systemName: "wifi")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.kfConnected)
+                    .frame(width: 28, height: 28)
+                    .background(Color.kfConnected.opacity(0.12))
+                    .clipShape(Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("STAY CONNECTED")
+                        .font(KFFont.caption(9, weight: .bold))
+                        .kerning(1.2)
+                        .foregroundStyle(Color.kfTextMuted)
+                    Text("Reconnect automatically on network change")
+                        .font(KFFont.body(13))
+                        .foregroundStyle(.white)
+                }
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { vpn.autoConnectEnabled },
+                    set: { on in Task { await vpn.setAutoConnect(on) } }
+                ))
+                .toggleStyle(.switch)
+                .scaleEffect(0.8)
+                .tint(Color.kfConnected)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+        }
     }
 
     // MARK: - Haven DNS
@@ -298,6 +432,19 @@ struct MacMainView: View {
     // MARK: - Helpers
 
     private func handleConnectTap() {
+        // Upgrade gate
+        guard storeKit.hasVPN else {
+            upgradeReason = .vpnRequiresEnclave
+            showUpgradeSheet = true
+            return
+        }
+
+        // Multi-hop path
+        if multiHopEnabled && storeKit.hasMultiHop {
+            showMultiHopPicker = true
+            return
+        }
+
         Task {
             do {
                 if vpn.status == .connected {
@@ -325,6 +472,26 @@ struct MacMainView: View {
                 errorMessage = error.localizedDescription
                 showError = true
             }
+        }
+    }
+
+    private var currentRegionLabel: String {
+        if let region = vpn.connectedServer?.region {
+            return regionShortLabel(region)
+        }
+        return "Auto"
+    }
+
+    private func regionShortLabel(_ regionId: String) -> String {
+        switch regionId {
+        case "us-east":      return "US East"
+        case "us-west":      return "US West"
+        case "eu-west":      return "EU West"
+        case "eu-north":     return "EU North"
+        case "ap-southeast": return "SE Asia"
+        case "ap-northeast": return "Japan"
+        case "ap-south":     return "India"
+        default:             return regionId
         }
     }
 

@@ -18,6 +18,11 @@ struct MainMenuView: View {
     @State private var showServerList = false
     @State private var errorMessage: String? = nil
     @State private var showError = false
+    @State private var showRegionPicker = false
+    @State private var showMultiHopPicker = false
+    @State private var showUpgradeSheet = false
+    @State private var upgradeReason: UpgradeReason = .vpnRequiresEnclave
+    @State private var multiHopEnabled = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,6 +31,10 @@ struct MainMenuView: View {
             connectionSection
             Divider().background(Color.kfBorder)
             serverSection
+            if !simpleMode {
+                Divider().background(Color.kfBorder)
+                advancedCompactSection
+            }
             Divider().background(Color.kfBorder)
             havenSection
             Divider().background(Color.kfBorder)
@@ -40,6 +49,20 @@ struct MainMenuView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(errorMessage ?? "Unknown error")
+        }
+        .sheet(isPresented: $showRegionPicker) {
+            MacRegionPickerView()
+                .environmentObject(vpn)
+                .environmentObject(servers)
+        }
+        .sheet(isPresented: $showMultiHopPicker) {
+            MacMultiHopPickerView()
+                .environmentObject(vpn)
+                .environmentObject(servers)
+        }
+        .sheet(isPresented: $showUpgradeSheet) {
+            MacUpgradeSheet(reason: upgradeReason)
+                .environmentObject(storeKit)
         }
         .task {
             await servers.refresh()
@@ -145,47 +168,66 @@ struct MainMenuView: View {
 
     private var serverSection: some View {
         VStack(spacing: 0) {
-            Button {
-                if !simpleMode {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showServerList.toggle()
-                    }
-                    if !showServerList {
-                        Task { await servers.refresh() }
-                    }
-                }
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: simpleMode ? "sparkles" : "location.north.line.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Color.kfAccentBlue)
-                        .frame(width: 24, height: 24)
-                        .background(Color.kfAccentBlue.opacity(0.12))
-                        .clipShape(Circle())
-
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("SERVER")
-                            .font(KFFont.caption(9, weight: .bold))
-                            .kerning(1.2)
-                            .foregroundStyle(Color.kfTextMuted)
-                        Text(serverDisplayName)
-                            .font(KFFont.body(13))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
+            HStack(spacing: 10) {
+                Button {
                     if !simpleMode {
-                        Image(systemName: showServerList ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Color.kfTextMuted)
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showServerList.toggle()
+                        }
+                        if !showServerList {
+                            Task { await servers.refresh() }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: simpleMode ? "sparkles" : "location.north.line.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color.kfAccentBlue)
+                            .frame(width: 24, height: 24)
+                            .background(Color.kfAccentBlue.opacity(0.12))
+                            .clipShape(Circle())
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("SERVER")
+                                .font(KFFont.caption(9, weight: .bold))
+                                .kerning(1.2)
+                                .foregroundStyle(Color.kfTextMuted)
+                            Text(serverDisplayName)
+                                .font(KFFont.body(13))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        if !simpleMode {
+                            Image(systemName: showServerList ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color.kfTextMuted)
+                        }
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
+                .buttonStyle(.plain)
+
+                if !simpleMode {
+                    // Compact region label tap
+                    Button {
+                        showRegionPicker = true
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(currentRegionShort)
+                                .font(KFFont.caption(10))
+                                .foregroundStyle(Color.kfAccentBlue)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 8))
+                                .foregroundStyle(Color.kfAccentBlue)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
 
             if showServerList && !simpleMode {
                 serverListView
@@ -258,6 +300,77 @@ struct MainMenuView: View {
             .background(isSelected ? Color.kfAccentBlue.opacity(0.08) : Color.clear)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Advanced compact (kill switch + multi-hop + stay connected)
+
+    private var advancedCompactSection: some View {
+        VStack(spacing: 0) {
+            // Kill switch
+            HStack(spacing: 10) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.kfAccentPurple)
+                    .frame(width: 20, height: 20)
+                Text("Kill Switch")
+                    .font(KFFont.body(12))
+                    .foregroundStyle(.white)
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { vpn.tunnelMode == .full },
+                    set: { on in Task { await vpn.setTunnelMode(on ? .full : .standard) } }
+                ))
+                .toggleStyle(.switch)
+                .scaleEffect(0.7)
+                .tint(Color.kfAccentPurple)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+
+            Divider().background(Color.kfBorder).padding(.horizontal, 14)
+
+            // Multi-hop
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color(hex: "#f59e0b"))
+                    .frame(width: 20, height: 20)
+                Text("Multi-Hop")
+                    .font(KFFont.body(12))
+                    .foregroundStyle(storeKit.hasMultiHop ? .white : Color.kfTextMuted)
+                Spacer()
+                Toggle("", isOn: $multiHopEnabled)
+                    .toggleStyle(.switch)
+                    .scaleEffect(0.7)
+                    .tint(Color(hex: "#f59e0b"))
+                    .disabled(!storeKit.hasMultiHop)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+
+            Divider().background(Color.kfBorder).padding(.horizontal, 14)
+
+            // Stay connected
+            HStack(spacing: 10) {
+                Image(systemName: "wifi")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.kfConnected)
+                    .frame(width: 20, height: 20)
+                Text("Stay Connected")
+                    .font(KFFont.body(12))
+                    .foregroundStyle(.white)
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { vpn.autoConnectEnabled },
+                    set: { on in Task { await vpn.setAutoConnect(on) } }
+                ))
+                .toggleStyle(.switch)
+                .scaleEffect(0.7)
+                .tint(Color.kfConnected)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+        }
     }
 
     // MARK: - Haven DNS
@@ -376,6 +489,17 @@ struct MainMenuView: View {
     // MARK: - Connect action
 
     private func handleConnectTap() {
+        guard storeKit.hasVPN else {
+            upgradeReason = .vpnRequiresEnclave
+            showUpgradeSheet = true
+            return
+        }
+
+        if multiHopEnabled && storeKit.hasMultiHop {
+            showMultiHopPicker = true
+            return
+        }
+
         Task {
             do {
                 if vpn.status == .connected {
@@ -407,6 +531,22 @@ struct MainMenuView: View {
     }
 
     // MARK: - Computed helpers
+
+    private var currentRegionShort: String {
+        if let region = vpn.connectedServer?.region {
+            switch region {
+            case "us-east":      return "US-E ▾"
+            case "us-west":      return "US-W ▾"
+            case "eu-west":      return "EU-W ▾"
+            case "eu-north":     return "EU-N ▾"
+            case "ap-southeast": return "SEA ▾"
+            case "ap-northeast": return "JP ▾"
+            case "ap-south":     return "IN ▾"
+            default:             return "\(region) ▾"
+            }
+        }
+        return "Auto ▾"
+    }
 
     private var serverDisplayName: String {
         if simpleMode {

@@ -1,8 +1,7 @@
 // MacAccountView.swift
 // WraithVPNMac
 //
-// Settings / account management window.
-// Covers: subscription status, token entry, VPN peer management, Haven DNS preferences.
+// Settings / account management window — full feature parity with iOS SettingsView.
 
 import SwiftUI
 
@@ -12,39 +11,105 @@ struct MacAccountView: View {
     @EnvironmentObject var vpn:      WireGuardManager
     @EnvironmentObject var haven:    HavenDNSManager
 
-    @State private var showTokenEntry = false
-    @State private var showRevokeAlert = false
-    @State private var isRestoring = false
+    @State private var showTokenEntry      = false
+    @State private var showRevokeAlert     = false
+    @State private var showSignOutAlert    = false
+    @State private var showRegenerateAlert = false
+    @State private var isRestoring         = false
+
+    // Peers
+    @State private var peerList: PeerListResponse? = nil
+    @State private var isPeerListLoading = false
+    @State private var peerListError: String? = nil
+    @State private var revokingPeerIds: Set<String> = []
+
+    // Security
+    @State private var showIdentityLink   = false
+    @State private var identityLinkEmail  = ""
+    @State private var isLinkingIdentity  = false
+    @State private var identityLinked     = UserDefaults.standard.bool(forKey: "identityLinked")
+    @State private var identityLinkError: String? = nil
+
+    // Haven sheets
+    @State private var showHavenSettings  = false
+    @State private var showDnsStats       = false
+    @State private var showAchievements   = false
+
+    // Platform status
+    @State private var platformStatus: PlatformStatus? = nil
+
+    @AppStorage("simpleMode") private var simpleMode = true
 
     var body: some View {
         ScrollView {
             VStack(spacing: KFSpacing.md) {
                 subscriptionCard
-                vpnPeerCard
-                havenCard
-                authCard
+                deviceManagementCard
+                securityCard
+                havenInsightsCard
+                subscriptionManageCard
+                supportCard
+                versionFooter
             }
             .padding(KFSpacing.lg)
         }
-        .frame(minWidth: 400, minHeight: 460)
+        .frame(minWidth: 440, minHeight: 560)
         .background(Color.kfBackground)
         .preferredColorScheme(.dark)
         .navigationTitle("Account & Settings")
         .sheet(isPresented: $showTokenEntry) {
-            TokenEntryView()
+            TokenEntryView().environmentObject(storeKit)
+        }
+        .sheet(isPresented: $showIdentityLink) {
+            identityLinkSheet
+        }
+        .sheet(isPresented: $showHavenSettings) {
+            MacHavenDNSSettingsView()
+                .environmentObject(haven)
                 .environmentObject(storeKit)
         }
+        .sheet(isPresented: $showDnsStats) {
+            MacDnsStatsView()
+        }
+        .sheet(isPresented: $showAchievements) {
+            MacAchievementsView()
+        }
         .alert("Revoke VPN Peer", isPresented: $showRevokeAlert) {
-            Button("Revoke", role: .destructive) {
-                Task { await vpn.revokePeer() }
-            }
+            Button("Revoke", role: .destructive) { Task { await vpn.revokePeer() } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This removes your VPN configuration and frees the device slot. You can re-provision at any time.")
         }
+        .alert("Sign Out", isPresented: $showSignOutAlert) {
+            Button("Sign Out", role: .destructive) {
+                Task {
+                    await vpn.revokePeer()
+                    storeKit.signOut()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your subscription token will be removed from this device.")
+        }
+        .alert("Regenerate Keys?", isPresented: $showRegenerateAlert) {
+            Button("Regenerate", role: .destructive) {
+                Task {
+                    await vpn.revokePeer()
+                    _ = try? vpn.generateKeypair()
+                    await vpn.autoProvisionIfNeeded()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A new WireGuard keypair will be generated. Your current tunnel will disconnect.")
+        }
+        .task {
+            await loadPeers()
+            platformStatus = try? await APIClient.shared.fetchPlatformStatus()
+        }
     }
 
-    // MARK: - Subscription
+    // MARK: - Subscription card
 
     private var subscriptionCard: some View {
         VStack(alignment: .leading, spacing: KFSpacing.sm) {
@@ -90,160 +155,337 @@ struct MacAccountView: View {
         .kfCard()
     }
 
-    // MARK: - VPN Peer
+    // MARK: - Device Management
 
-    private var vpnPeerCard: some View {
+    private var deviceManagementCard: some View {
         VStack(alignment: .leading, spacing: KFSpacing.sm) {
-            sectionHeader("VPN")
+            sectionHeader("Device Management")
 
-            HStack(spacing: KFSpacing.md) {
-                ZStack {
-                    Circle()
-                        .fill(Color.kfAccentBlue.opacity(0.12))
-                        .frame(width: 36, height: 36)
-                    Image(systemName: vpn.isProvisioned ? "network" : "network.slash")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(vpn.isProvisioned ? Color.kfAccentBlue : Color.kfTextMuted)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(vpn.isProvisioned ? "Peer provisioned" : "No peer")
-                        .font(KFFont.body(13))
-                        .foregroundStyle(.white)
-                    if let ip = vpn.assignedIP {
-                        Text(ip)
-                            .font(KFFont.mono(11))
-                            .foregroundStyle(Color.kfTextMuted)
-                    }
-                }
-                Spacer()
-                if vpn.isProvisioned {
-                    Button("Revoke") { showRevokeAlert = true }
+            if isPeerListLoading {
+                HStack { Spacer(); ProgressView().scaleEffect(0.8); Spacer() }
+            } else if let err = peerListError {
+                Text(err).font(KFFont.caption(12)).foregroundStyle(Color.kfError)
+            } else if let pl = peerList {
+                // Slots usage
+                HStack {
+                    Text("\(pl.used) of \(pl.limit) device slots used")
+                        .font(KFFont.caption(12))
+                        .foregroundStyle(Color.kfTextMuted)
+                    Spacer()
+                    if !pl.canAdd {
+                        Button("Add 5 Slots") {
+                            Task { await storeKit.purchaseSeatPack() }
+                        }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .foregroundStyle(Color.kfError)
+                        .tint(Color.kfAccentBlue)
+                    }
+                }
+
+                // Peer list
+                ForEach(pl.peers) { peer in
+                    Divider().background(Color.kfBorder)
+                    HStack(spacing: KFSpacing.sm) {
+                        Image(systemName: "laptopcomputer")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.kfAccentBlue)
+                            .frame(width: 24)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(peer.label)
+                                    .font(KFFont.body(13))
+                                    .foregroundStyle(.white)
+                                if vpn.activePeerId == peer.peerId {
+                                    Text("CURRENT")
+                                        .font(KFFont.caption(9, weight: .bold))
+                                        .kerning(1)
+                                        .foregroundStyle(Color.kfConnected)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .background(Color.kfConnected.opacity(0.15))
+                                        .clipShape(Capsule())
+                                }
+                            }
+                            Text(peer.assignedIpv4)
+                                .font(KFFont.mono(10))
+                                .foregroundStyle(Color.kfTextMuted)
+                        }
+                        Spacer()
+                        if revokingPeerIds.contains(peer.peerId) {
+                            ProgressView().scaleEffect(0.7)
+                        } else {
+                            Button {
+                                Task { await revokePeer(peer) }
+                            } label: {
+                                Image(systemName: "xmark.circle")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.kfError)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
             }
+        }
+        .padding(KFSpacing.md)
+        .kfCard()
+    }
 
-            if !simpleMode {
-                Divider().background(Color.kfBorder)
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Kill Switch")
+    // MARK: - Security
+
+    private var securityCard: some View {
+        VStack(alignment: .leading, spacing: KFSpacing.sm) {
+            sectionHeader("Security")
+
+            macActionRow(
+                icon: "key.fill",
+                title: "Regenerate WireGuard Keys",
+                subtitle: "Creates a new keypair and re-provisions tunnel"
+            ) {
+                showRegenerateAlert = true
+            }
+
+            Divider().background(Color.kfBorder)
+
+            if identityLinked {
+                HStack(spacing: KFSpacing.sm) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.kfConnected)
+                        .frame(width: 28, height: 28)
+                        .background(Color.kfConnected.opacity(0.12))
+                        .clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Identity Linked")
                             .font(KFFont.body(13))
                             .foregroundStyle(.white)
-                        Text("Block all traffic if tunnel drops")
+                        Text("Recovery email is set")
                             .font(KFFont.caption(11))
                             .foregroundStyle(Color.kfTextMuted)
                     }
                     Spacer()
-                    Toggle("", isOn: Binding(
-                        get: { vpn.tunnelMode == .full },
-                        set: { on in Task { await vpn.setTunnelMode(on ? .full : .standard) } }
-                    ))
-                    .toggleStyle(.switch)
-                    .tint(Color.kfAccentPurple)
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Color.kfConnected)
                 }
+            } else {
+                macActionRow(
+                    icon: "envelope.badge.shield.half.filled",
+                    title: "Link Recovery Identity",
+                    subtitle: "Set a recovery email for account access"
+                ) {
+                    showIdentityLink = true
+                }
+            }
+
+            if let err = identityLinkError {
+                Text(err).font(KFFont.caption(11)).foregroundStyle(Color.kfError)
             }
         }
         .padding(KFSpacing.md)
         .kfCard()
     }
 
-    // MARK: - Haven DNS
+    // MARK: - Haven & Stats
 
-    private var havenCard: some View {
+    private var havenInsightsCard: some View {
         VStack(alignment: .leading, spacing: KFSpacing.sm) {
-            sectionHeader("Haven DNS")
+            sectionHeader("Haven & Stats")
 
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(haven.isEnabled ? "Protection Active" : "Protection Off")
-                        .font(KFFont.body(13))
-                        .foregroundStyle(.white)
-                    Text("Ad & tracker blocking via WraithGate nodes")
-                        .font(KFFont.caption(11))
-                        .foregroundStyle(Color.kfTextMuted)
-                }
-                Spacer()
-                if haven.isLoading {
-                    ProgressView().scaleEffect(0.7)
-                } else {
-                    Toggle("", isOn: Binding(
-                        get: { haven.isEnabled },
-                        set: { _ in Task { await haven.toggle() } }
-                    ))
-                    .toggleStyle(.switch)
-                    .tint(Color.kfConnected)
-                }
+            macActionRow(
+                icon: "slider.horizontal.3",
+                title: "Configure DNS Filters",
+                subtitle: storeKit.hasDNSSettings ? "Manage protection level & blocked services" : "Haven Pro feature"
+            ) {
+                guard storeKit.hasDNSSettings else { return }
+                showHavenSettings = true
             }
 
-            if let err = haven.error {
-                Text(err)
-                    .font(KFFont.caption(11))
-                    .foregroundStyle(Color.kfError)
+            Divider().background(Color.kfBorder)
+
+            macActionRow(
+                icon: "chart.bar.fill",
+                title: "DNS Stats",
+                subtitle: "View your 30-day blocking history"
+            ) {
+                showDnsStats = true
+            }
+
+            Divider().background(Color.kfBorder)
+
+            macActionRow(
+                icon: "trophy.fill",
+                title: "Achievements",
+                subtitle: "Your privacy milestones"
+            ) {
+                showAchievements = true
             }
         }
         .padding(KFSpacing.md)
         .kfCard()
     }
 
-    // MARK: - Auth
+    // MARK: - Subscription management
 
-    private var authCard: some View {
+    private var subscriptionManageCard: some View {
         VStack(alignment: .leading, spacing: KFSpacing.sm) {
             sectionHeader("Account")
 
-            VStack(spacing: KFSpacing.xs) {
-                macActionRow(
-                    icon: "key.fill",
-                    title: "Enter / Change Token",
-                    subtitle: "Link a Stripe or portal purchase"
-                ) {
-                    showTokenEntry = true
+            macActionRow(
+                icon: "key.fill",
+                title: "Enter / Change Token",
+                subtitle: "Link a Stripe or portal purchase"
+            ) {
+                showTokenEntry = true
+            }
+
+            Divider().background(Color.kfBorder)
+
+            macActionRow(
+                icon: "arrow.clockwise",
+                title: "Restore App Store Purchase",
+                subtitle: "Sync your iOS subscription to this Mac"
+            ) {
+                isRestoring = true
+                Task {
+                    await storeKit.restorePurchases()
+                    isRestoring = false
                 }
+            }
 
-                Divider().background(Color.kfBorder)
-
-                macActionRow(
-                    icon: "arrow.clockwise",
-                    title: "Restore App Store Purchase",
-                    subtitle: "Sync your iOS subscription to this Mac"
-                ) {
-                    isRestoring = true
-                    Task {
-                        await storeKit.restorePurchases()
-                        isRestoring = false
-                    }
+            if isRestoring {
+                HStack {
+                    Spacer()
+                    ProgressView("Restoring…").scaleEffect(0.8)
+                    Spacer()
                 }
+            }
 
-                if isRestoring {
-                    HStack {
-                        Spacer()
-                        ProgressView("Restoring…")
-                            .scaleEffect(0.8)
-                        Spacer()
-                    }
+            Divider().background(Color.kfBorder)
+
+            macActionRow(
+                icon: "creditcard",
+                title: "Manage Subscription",
+                subtitle: "App Store subscriptions page"
+            ) {
+                if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
+                    NSWorkspace.shared.open(url)
                 }
+            }
 
-                Divider().background(Color.kfBorder)
+            Divider().background(Color.kfBorder)
 
-                macActionRow(
-                    icon: "arrow.right.square",
-                    title: "Sign Out",
-                    subtitle: "Remove token from this device",
-                    destructive: true
-                ) {
-                    storeKit.signOut()
-                }
+            macActionRow(
+                icon: "arrow.right.square",
+                title: "Sign Out",
+                subtitle: "Remove token from this device",
+                destructive: true
+            ) {
+                showSignOutAlert = true
             }
         }
         .padding(KFSpacing.md)
         .kfCard()
     }
 
-    // MARK: - Helpers
+    // MARK: - Support
 
-    @AppStorage("simpleMode") private var simpleMode = true
+    private var supportCard: some View {
+        VStack(alignment: .leading, spacing: KFSpacing.sm) {
+            sectionHeader("Support")
+
+            if let status = platformStatus {
+                HStack(spacing: KFSpacing.sm) {
+                    Circle()
+                        .fill(status.isHealthy ? Color.kfConnected : (status.isDegraded ? Color.orange : Color.kfError))
+                        .frame(width: 8, height: 8)
+                    Text(status.displayStatus)
+                        .font(KFFont.caption(12))
+                        .foregroundStyle(Color.kfTextMuted)
+                    Spacer()
+                }
+                .padding(.bottom, KFSpacing.xs)
+                Divider().background(Color.kfBorder)
+            }
+
+            macActionRow(icon: "hand.raised.fill", title: "Privacy Policy", subtitle: "") {
+                if let url = URL(string: "https://katafract.com/privacy") { NSWorkspace.shared.open(url) }
+            }
+            Divider().background(Color.kfBorder)
+            macActionRow(icon: "doc.text", title: "Terms of Service", subtitle: "") {
+                if let url = URL(string: "https://katafract.com/terms") { NSWorkspace.shared.open(url) }
+            }
+            Divider().background(Color.kfBorder)
+            macActionRow(icon: "envelope", title: "Contact Support", subtitle: "") {
+                if let url = URL(string: "mailto:support@katafract.com") { NSWorkspace.shared.open(url) }
+            }
+        }
+        .padding(KFSpacing.md)
+        .kfCard()
+    }
+
+    // MARK: - Version footer
+
+    private var versionFooter: some View {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build   = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        return Text("WraithVPN \(version) (\(build))")
+            .font(KFFont.caption(11))
+            .foregroundStyle(Color.kfTextMuted)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, KFSpacing.md)
+    }
+
+    // MARK: - Identity link sheet
+
+    private var identityLinkSheet: some View {
+        VStack(spacing: 16) {
+            Text("Link Recovery Identity")
+                .font(KFFont.heading(15))
+                .foregroundStyle(.white)
+
+            Text("Enter your email address to enable account recovery.")
+                .font(KFFont.caption(12))
+                .foregroundStyle(Color.kfTextMuted)
+                .multilineTextAlignment(.center)
+
+            TextField("you@example.com", text: $identityLinkEmail)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 12, design: .monospaced))
+
+            if let err = identityLinkError {
+                Text(err).font(.system(size: 11)).foregroundStyle(.red)
+            }
+
+            HStack {
+                Button("Cancel") { showIdentityLink = false }
+                Spacer()
+                Button("Link") {
+                    Task {
+                        isLinkingIdentity = true
+                        identityLinkError = nil
+                        do {
+                            _ = try await APIClient.shared.linkIdentity(type: "email", value: identityLinkEmail)
+                            UserDefaults.standard.set(true, forKey: "identityLinked")
+                            identityLinked = true
+                            showIdentityLink = false
+                        } catch {
+                            identityLinkError = error.localizedDescription
+                        }
+                        isLinkingIdentity = false
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.kfAccentBlue)
+                .disabled(identityLinkEmail.isEmpty || isLinkingIdentity)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 320)
+        .background(Color.kfBackground)
+        .preferredColorScheme(.dark)
+    }
+
+    // MARK: - Helpers
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
@@ -271,9 +513,11 @@ struct MacAccountView: View {
                     Text(title)
                         .font(KFFont.body(13))
                         .foregroundStyle(destructive ? Color.kfError : .white)
-                    Text(subtitle)
-                        .font(KFFont.caption(11))
-                        .foregroundStyle(Color.kfTextMuted)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(KFFont.caption(11))
+                            .foregroundStyle(Color.kfTextMuted)
+                    }
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
@@ -282,5 +526,33 @@ struct MacAccountView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private func loadPeers() async {
+        isPeerListLoading = true
+        peerListError = nil
+        do { peerList = try await APIClient.shared.fetchPeers() }
+        catch { peerListError = "Could not load devices" }
+        isPeerListLoading = false
+    }
+
+    private func revokePeer(_ peer: Peer) async {
+        revokingPeerIds.insert(peer.peerId)
+        defer { revokingPeerIds.remove(peer.peerId) }
+        do {
+            try await APIClient.shared.deletePeer(peerId: peer.peerId)
+            if vpn.activePeerId == peer.peerId { await vpn.revokePeer() }
+            await loadPeers()
+        } catch {
+            peerListError = "Revoke failed: \(error.localizedDescription)"
+        }
+    }
+}
+
+// MARK: - WireGuardManager activePeerId extension helper
+
+private extension WireGuardManager {
+    var activePeerId: String? {
+        KeychainHelper.shared.readOptional(for: .activePeerId)
     }
 }

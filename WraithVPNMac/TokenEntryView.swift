@@ -125,15 +125,7 @@ struct TokenEntryView: View {
                 try KeychainHelper.shared.save(exp, for: .tokenExpiresAt)
             }
 
-            // 2. Provision a peer for this Mac
-            statusMessage = "Provisioning VPN peer…"
-            let provision = try await APIClient.shared.provisionPeer(
-                pubkey: "",
-                regionId: nil,
-                label:  "Mac — \(Host.current().localizedName ?? "Desktop")"
-            )
-            try VPNConfigManager.shared.store(response: provision)
-
+            // WireGuardManager will provision the peer using a real keypair when needed.
             await storeKit.reloadFromKeychain()
             statusMessage = nil
             dismiss()
