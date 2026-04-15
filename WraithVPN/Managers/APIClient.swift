@@ -347,9 +347,16 @@ final class APIClient {
         guard (200..<300).contains(http.statusCode) else {
             let bodyStr = String(data: data, encoding: .utf8) ?? "<binary>"
 
-            // 401 on an authenticated request means the token is gone/expired.
-            // Clear local credentials and notify observers so the UI can redirect to paywall.
-            if http.statusCode == 401 && req.requiresAuth {
+            // 401, or a subscription-fatal 403 (expired/invalid/suspended token) —
+            // clear credentials and route to paywall. Other 403s (device limit,
+            // plan upgrade required) are surfaced as regular errors, not wipes.
+            let isSubscriptionFatal: Bool = {
+                if http.statusCode == 401 { return true }
+                guard http.statusCode == 403, req.requiresAuth else { return false }
+                let fatal = ["Invalid token", "Token suspended or expired", "Token expired"]
+                return fatal.contains(where: { bodyStr.contains($0) })
+            }()
+            if isSubscriptionFatal && req.requiresAuth {
                 KeychainHelper.shared.delete(for: .subscriptionToken)
                 KeychainHelper.shared.delete(for: .tokenExpiresAt)
                 KeychainHelper.shared.delete(for: .tokenPlan)
