@@ -21,6 +21,9 @@ struct ConnectView: View {
     @State private var errorMessage: String? = nil
     @State private var showError          = false
     @State private var upgradeReason: UpgradeReason? = nil
+    @State private var showHopSwitchConfirm    = false
+    @State private var hopSwitchRevertValue    = false   // old multiHopMode to restore on cancel
+    @State private var suppressNextHopModeChange = false
 
     private var isAnimatingRing: Bool {
         vpn.status == .connecting || vpn.status == .disconnecting || vpn.isProvisioning
@@ -85,17 +88,37 @@ struct ConnectView: View {
         .onChange(of: storeKit.hasMultiHop) { _, _ in
             applyDefaultHopMode()
         }
-        .onChange(of: multiHopMode) { _, newValue in
+        .onChange(of: multiHopMode) { oldValue, newValue in
+            if suppressNextHopModeChange {
+                suppressNextHopModeChange = false
+                return
+            }
             if newValue && !storeKit.hasMultiHop {
                 upgradeReason = .multiHopRequiresPlus
                 multiHopMode = false
                 return
             }
             hopModeExplicitlySet = true
-            // Disconnect cleanly before switching modes
             if vpn.status == .connected {
+                // Intercept — show confirmation before disconnecting
+                hopSwitchRevertValue = oldValue
+                showHopSwitchConfirm = true
+            }
+        }
+        .alert(
+            "Disconnect to Switch Mode?",
+            isPresented: $showHopSwitchConfirm
+        ) {
+            Button("Switch & Disconnect", role: .destructive) {
                 vpn.disconnect()
             }
+            Button("Cancel", role: .cancel) {
+                suppressNextHopModeChange = true
+                multiHopMode = hopSwitchRevertValue
+            }
+        } message: {
+            let target = multiHopMode ? "Multi-Hop" : "Single Hop"
+            Text("Switching to \(target) requires disconnecting your current VPN session.")
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: vpn.status == .connected)
         .sensoryFeedback(.impact(weight: .light),  trigger: vpn.status == .disconnected)
