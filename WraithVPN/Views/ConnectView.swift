@@ -137,6 +137,49 @@ struct ConnectView: View {
 
             if !multiHopMode {
                 serverButton
+            } else if vpn.isMultiHop,
+                      let entry = vpn.multiHopEntryServer,
+                      let exit  = vpn.multiHopExitServer {
+                // Multihop active — show current route with a Change Route button
+                Button { showMultiHopPicker = true } label: {
+                    HStack(spacing: KFSpacing.md) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Color(hex: "#f59e0b"))
+                            .frame(width: 40, height: 40)
+                            .background(Color(hex: "#f59e0b").opacity(0.12))
+                            .clipShape(Circle())
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("MULTI-HOP ROUTE")
+                                .font(KFFont.caption(10, weight: .bold))
+                                .kerning(1.3)
+                                .foregroundStyle(Color.kfTextMuted)
+                            HStack(spacing: 6) {
+                                Text(entry.flagEmoji)
+                                Text(entry.cityName)
+                                    .foregroundStyle(.white)
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Color.kfTextMuted)
+                                Text(exit.flagEmoji)
+                                Text(exit.cityName)
+                                    .foregroundStyle(.white)
+                            }
+                            .font(KFFont.heading(15))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            Text("Tap to change route")
+                                .font(KFFont.caption(12))
+                                .foregroundStyle(Color.kfTextMuted)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.kfTextMuted)
+                    }
+                    .padding(KFSpacing.md)
+                    .kfCard()
+                }
             }
         }
     }
@@ -265,32 +308,80 @@ struct ConnectView: View {
 
     private var connectionSummary: some View {
         VStack(spacing: KFSpacing.sm) {
-            HStack(spacing: KFSpacing.md) {
-                if vpn.isMultiHop, let entry = vpn.multiHopEntryServer, let exit = vpn.multiHopExitServer {
-                    summaryPill(
-                        title: "Route",
-                        value: "\(entry.cityName)\n→ \(exit.cityName)",
-                        icon: "arrow.triangle.2.circlepath"
-                    )
-                } else {
-                    summaryPill(
-                        title: "Route",
-                        value: simpleMode ? "Automatic" : (servers.selectedServer?.cityName ?? "Automatic"),
-                        icon: (simpleMode || servers.selectedServer == nil) ? "sparkles" : "location.north.line.fill"
-                    )
+            if vpn.isMultiHop, let entry = vpn.multiHopEntryServer, let exit = vpn.multiHopExitServer {
+                // Multihop: full-width route pill showing both hops, then mode pill
+                HStack(spacing: KFSpacing.sm) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.kfAccentBlue)
+                        .frame(width: 28, height: 28)
+                        .background(Color.kfAccentBlue.opacity(0.12))
+                        .clipShape(Circle())
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("ROUTE".uppercased())
+                            .font(KFFont.caption(10, weight: .bold))
+                            .kerning(1.2)
+                            .foregroundStyle(Color.kfTextMuted)
+                        HStack(spacing: 6) {
+                            Text(entry.flagEmoji)
+                                .font(.system(size: 13))
+                            Text(entry.cityName)
+                                .font(KFFont.body(14))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Color.kfTextMuted)
+                            Text(exit.flagEmoji)
+                                .font(.system(size: 13))
+                            Text(exit.cityName)
+                                .font(KFFont.body(14))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                        }
+                        .minimumScaleFactor(0.75)
+                        .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
                 }
+                .padding(KFSpacing.sm)
+                .frame(maxWidth: .infinity)
+                .background(Color.kfSurface.opacity(0.92))
+                .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous)
+                        .stroke(Color.kfBorder, lineWidth: 1)
+                )
+
                 summaryPill(
                     title: "Mode",
                     value: vpn.status == .connected ? "Protected" : "Standby",
                     icon: vpn.status == .connected ? "shield.fill" : "moon.stars.fill"
                 )
-            }
-            if !simpleMode {
-                summaryPill(
-                    title: "Kill Switch",
-                    value: vpn.tunnelMode == .full ? "On" : "Off",
-                    icon: vpn.tunnelMode == .full ? "lock.shield.fill" : "lock.shield"
-                )
+            } else {
+                HStack(spacing: KFSpacing.md) {
+                    summaryPill(
+                        title: "Route",
+                        value: simpleMode
+                            ? (vpn.connectedServer?.cityName ?? "Automatic")
+                            : (servers.selectedServer?.cityName ?? "Automatic"),
+                        icon: (simpleMode && vpn.connectedServer == nil) ? "sparkles" : "location.north.line.fill"
+                    )
+                    summaryPill(
+                        title: "Mode",
+                        value: vpn.status == .connected ? "Protected" : "Standby",
+                        icon: vpn.status == .connected ? "shield.fill" : "moon.stars.fill"
+                    )
+                }
+                if !simpleMode {
+                    summaryPill(
+                        title: "Kill Switch",
+                        value: vpn.tunnelMode == .full ? "On" : "Off",
+                        icon: vpn.tunnelMode == .full ? "lock.shield.fill" : "lock.shield"
+                    )
+                }
             }
         }
     }
@@ -426,7 +517,7 @@ struct ConnectView: View {
                 }
 
                 // Multi-hop mode: open picker if no route provisioned yet
-                if multiHopMode && !vpn.isMultiHop {
+                if multiHopMode {
                     showMultiHopPicker = true
                     return
                 }
