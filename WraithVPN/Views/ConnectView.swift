@@ -539,7 +539,7 @@ struct ConnectView: View {
     private func handleConnectTap() {
         Task {
             do {
-                if vpn.status == .connected {
+                if vpn.status == .connected || vpn.status == .connecting || vpn.isProvisioning {
                     vpn.disconnect()
                     return
                 }
@@ -675,7 +675,7 @@ private struct ConnectButtonView: View {
     }
 
     private var isDisabled: Bool {
-        vpn.status == .connecting || vpn.status == .disconnecting || vpn.isProvisioning
+        vpn.status == .disconnecting
     }
 
     private var ring: some View {
@@ -750,10 +750,10 @@ private struct ConnectButtonView: View {
     }
 
     private var buttonLabel: String {
-        if vpn.isProvisioning { return "PREPARING" }
+        if vpn.isProvisioning { return "CANCEL" }
         switch vpn.status {
         case .connected:     return "DISCONNECT"
-        case .connecting:    return "CONNECTING"
+        case .connecting:    return "CANCEL"
         case .disconnecting: return "DISCONNECTING"
         default:             return "CONNECT"
         }

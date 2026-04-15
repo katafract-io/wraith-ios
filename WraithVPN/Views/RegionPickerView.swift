@@ -17,7 +17,6 @@ struct RegionPickerView: View {
     @State private var regions: [RegionSummary] = []
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
-    @State private var connecting: String? = nil   // regionId currently being connected
     @State private var drillDownRegion: RegionSummary? = nil
 
     // MARK: - Body
@@ -151,9 +150,7 @@ struct RegionPickerView: View {
 
             Spacer()
 
-            if connecting == "auto" {
-                ProgressView().tint(Color.kfAccentBlue)
-            } else if isAuto && vpn.status == .connected {
+            if isAuto && vpn.status == .connected {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Color.kfAccentBlue)
                     .font(.system(size: 18))
@@ -169,8 +166,8 @@ struct RegionPickerView: View {
         )
         .contentShape(Rectangle())
         .onTapGesture {
-            guard connecting == nil else { return }
-            Task { await connectAuto() }
+            dismiss()
+            Task { try? await vpn.connectToRegion("auto") }
         }
     }
 
@@ -182,7 +179,8 @@ struct RegionPickerView: View {
         return HStack(spacing: 0) {
             // Main tap area — connect
             Button {
-                Task { await connect(to: region) }
+                dismiss()
+                Task { try? await vpn.connectToRegion(region.id) }
             } label: {
                 HStack(spacing: KFSpacing.md) {
                     Text(continentFlag(region.continent))
@@ -215,9 +213,7 @@ struct RegionPickerView: View {
                         loadBadge(score: region.avgLoadScore)
                     }
 
-                    if connecting == region.id {
-                        ProgressView().tint(Color.kfAccentBlue)
-                    } else if vpn.connectedServer?.region == region.id {
+                    if vpn.connectedServer?.region == region.id {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(Color.kfAccentBlue)
                             .font(.system(size: 18))
@@ -227,7 +223,6 @@ struct RegionPickerView: View {
                 .padding(.trailing, KFSpacing.xs)
             }
             .buttonStyle(.plain)
-            .disabled(connecting != nil)
 
             // Drill-down button
             Divider()
@@ -245,7 +240,6 @@ struct RegionPickerView: View {
                     .padding(.vertical, KFSpacing.md)
             }
             .buttonStyle(.plain)
-            .disabled(connecting != nil)
         }
         .frame(maxWidth: .infinity)
         .background(Color.kfSurface.opacity(0.92))
@@ -423,27 +417,6 @@ struct RegionPickerView: View {
         }
     }
 
-    private func connectAuto() async {
-        connecting = "auto"
-        defer { connecting = nil }
-        do {
-            try await vpn.connectToRegion("auto")
-            dismiss()
-        } catch {
-            errorMessage = "Connect failed — \(error.localizedDescription)"
-        }
-    }
-
-    private func connect(to region: RegionSummary) async {
-        connecting = region.id
-        defer { connecting = nil }
-        do {
-            try await vpn.connectToRegion(region.id)
-            dismiss()
-        } catch {
-            errorMessage = "Connect failed — \(error.localizedDescription)"
-        }
-    }
 }
 
 #Preview {

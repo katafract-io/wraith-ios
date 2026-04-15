@@ -69,18 +69,17 @@ final class ServerListManager: ObservableObject {
             var results: [String: Double?] = [:]
             for await (nodeId, ms) in group {
                 results[nodeId] = ms
-            }
-
-            // Merge latency into server list and sort
-            let updated = rawServers.map { srv in
-                ServerLatency(server: srv, milliseconds: results[srv.nodeId] ?? nil)
-            }
-            servers = updated.sorted {
-                switch ($0.milliseconds, $1.milliseconds) {
-                case (let a?, let b?): return a < b
-                case (.some, nil):     return true
-                case (nil, .some):     return false
-                case (nil, nil):       return false
+                // Update progressively so each ping appears as it lands
+                let partial = rawServers.map { srv in
+                    ServerLatency(server: srv, milliseconds: results[srv.nodeId] ?? nil)
+                }
+                servers = partial.sorted {
+                    switch ($0.milliseconds, $1.milliseconds) {
+                    case (let a?, let b?): return a < b
+                    case (.some, nil):     return true
+                    case (nil, .some):     return false
+                    case (nil, nil):       return false
+                    }
                 }
             }
 
@@ -114,11 +113,6 @@ final class ServerListManager: ObservableObject {
             port: probePort
         )
         let params = NWParameters.tcp
-        // Prohibit VPN/tunnel interfaces (.other) so probes measure RTT from the
-        // user's real connection (WiFi or cellular) — not daisy-chained through the
-        // active VPN exit node. In kill-switch mode the probe may fail (returns nil),
-        // which is shown as "—" and is correct — we can't measure without bypassing.
-        params.prohibitedInterfaceTypes = [.other]
         let connection = NWConnection(to: endpoint, using: params)
 
         return await withCheckedContinuation { continuation in
