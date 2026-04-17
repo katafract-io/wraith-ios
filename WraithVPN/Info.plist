@@ -63,12 +63,13 @@
         </dict>
     </dict>
 
-    <!-- Encryption compliance — WireGuard uses non-exempt algorithms (ChaCha20/Curve25519).
-         Set TRUE because we ship a VPN implementation; declare annually via ASC
-         "Manage Encryption and Certificates" (free self-classification, no ERN needed
-         for open-source crypto per 15 CFR §740.17(b)). -->
+    <!-- Encryption compliance — FALSE is correct: WraithVPN ships WireGuard
+         (ChaCha20-Poly1305, Curve25519, BLAKE2s) but all three are publicly-available
+         open-source standard algorithms. ASC wizard classifies this as exempt under
+         15 CFR §740.17(b) / Category 5 Part 2 Note 4. France distribution excluded in
+         v1.0 — revisit with ANSSI filing before enabling. -->
     <key>ITSAppUsesNonExemptEncryption</key>
-    <true/>
+    <false/>
 
     <!-- SwiftUI lifecycle -->
     <key>UIApplicationSceneManifest</key>
