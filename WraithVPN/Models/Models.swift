@@ -434,6 +434,8 @@ struct SubscriptionInfo: Equatable {
         case "enclave_annual":        return "Enclave Annual"
         case "enclave_plus":          return "Enclave+"
         case "enclave_plus_annual":   return "Enclave+ Annual"
+        case "sovereign":             return "Sovereign"
+        case "sovereign_annual":      return "Sovereign Annual"
         default:                      return plan
         }
     }
@@ -455,9 +457,11 @@ struct SubscriptionInfo: Equatable {
         !isHavenOnly
     }
 
-    /// Can provision multi-hop double tunnel (Enclave+ and above).
+    /// Can provision multi-hop double tunnel (Enclave+ and above, including Sovereign bundle).
     var hasMultiHop: Bool {
-        plan == "enclave_plus" || plan == "enclave_plus_annual" || plan == "founder"
+        plan == "enclave_plus" || plan == "enclave_plus_annual"
+            || plan == "sovereign" || plan == "sovereign_annual"
+            || plan == "founder"
     }
 
     var isExpired: Bool {
