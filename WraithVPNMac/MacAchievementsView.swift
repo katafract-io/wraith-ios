@@ -112,7 +112,8 @@ struct MacAchievementsView: View {
                 }
             }
         }
-        .frame(width: 500, minHeight: 420)
+        .frame(width: 500)
+        .frame(minHeight: 420)
         .background(Color.kfBackground)
         .preferredColorScheme(.dark)
         .task { await load() }

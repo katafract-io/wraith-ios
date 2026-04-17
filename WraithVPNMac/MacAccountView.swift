@@ -549,10 +549,4 @@ struct MacAccountView: View {
     }
 }
 
-// MARK: - WireGuardManager activePeerId extension helper
-
-private extension WireGuardManager {
-    var activePeerId: String? {
-        KeychainHelper.shared.readOptional(for: .activePeerId)
-    }
-}
+// activePeerId is now a @Published var on WireGuardManager (since 51129ae); extension removed.

@@ -123,7 +123,8 @@ struct MacDnsStatsView: View {
                 }
             }
         }
-        .frame(width: 420, minHeight: 380)
+        .frame(width: 420)
+        .frame(minHeight: 380)
         .background(Color.kfBackground)
         .preferredColorScheme(.dark)
         .task { await load() }

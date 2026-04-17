@@ -157,7 +157,8 @@ struct MacHavenDNSSettingsView: View {
                 }
             }
         }
-        .frame(width: 440, minHeight: 480)
+        .frame(width: 440)
+        .frame(minHeight: 480)
         .background(Color.kfBackground)
         .preferredColorScheme(.dark)
         .task { await haven.loadPreferences() }

@@ -114,7 +114,8 @@ struct MacRegionPickerView: View {
                     .padding(8)
             }
         }
-        .frame(width: 360, minHeight: 320)
+        .frame(width: 360)
+        .frame(minHeight: 320)
         .background(Color.kfBackground)
         .preferredColorScheme(.dark)
         .task { await loadRegions() }
