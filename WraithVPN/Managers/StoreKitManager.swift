@@ -158,6 +158,7 @@ final class StoreKitManager: ObservableObject {
     @Published var hasDNSSettings: Bool = false
     @Published var hasVPN:         Bool = false
     @Published var hasMultiHop:    Bool = false
+    @Published var hasSovereign:   Bool = false
     @Published var isFounder:      Bool = false
     @Published var isAdmin:        Bool = false
     @Published var isCheckingEntitlements: Bool = true
@@ -188,6 +189,7 @@ final class StoreKitManager: ObservableObject {
                 self?.subscription = nil
                 self?.hasPurchased   = false
                 self?.hasDNSSettings = false
+                self?.hasSovereign   = false
                 self?.isFounder      = false
                 self?.isAdmin        = false
             }
@@ -338,6 +340,7 @@ final class StoreKitManager: ObservableObject {
         hasDNSSettings = false
         hasVPN         = false
         hasMultiHop    = false
+        hasSovereign   = false
         isFounder      = false
         isAdmin        = false
     }
@@ -402,6 +405,7 @@ final class StoreKitManager: ObservableObject {
         hasVPN         = subscription?.hasVPN         ?? false
         hasMultiHop    = subscription?.hasMultiHop    ?? false
         isFounder      = KeychainHelper.shared.readOptional(for: .tokenIsFounder) == "1"
+        hasSovereign   = (subscription?.hasSovereign ?? false) || isFounder
         isAdmin        = KeychainHelper.shared.readOptional(for: .tokenIsAdmin)   == "1"
     }
 
@@ -427,6 +431,7 @@ final class StoreKitManager: ObservableObject {
             hasVPN         = subscription?.hasVPN         ?? false
             hasMultiHop    = subscription?.hasMultiHop    ?? false
             isFounder      = KeychainHelper.shared.readOptional(for: .tokenIsFounder) == "1"
+            hasSovereign   = (subscription?.hasSovereign ?? false) || isFounder
             isAdmin        = KeychainHelper.shared.readOptional(for: .tokenIsAdmin)   == "1"
 
             // Release the splash screen immediately — we have a valid cached token.

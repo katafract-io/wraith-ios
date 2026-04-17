@@ -464,6 +464,12 @@ struct SubscriptionInfo: Equatable {
             || plan == "founder"
     }
 
+    /// Has Sovereign tier entitlements: everything in Enclave+ plus Vault encrypted storage.
+    /// Founders get this automatically; paying subscribers via the Sovereign IAP in Vault.
+    var hasSovereign: Bool {
+        plan == "sovereign" || plan == "sovereign_annual" || plan == "founder"
+    }
+
     var isExpired: Bool {
         guard let exp = expiresAt else { return false }
         return exp < Date()
