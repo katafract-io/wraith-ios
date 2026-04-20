@@ -348,25 +348,13 @@ struct PaywallView: View {
 
     private var legalFooter: some View {
         VStack(spacing: KFSpacing.xs) {
-            HStack(spacing: KFSpacing.lg) {
-                Button("Restore Purchase") {
-                    Task { await storeKit.restorePurchases() }
-                }
-                .font(KFFont.caption(13))
-                .foregroundStyle(Color.kfAccentBlue)
-
-                Button("Have a token?") {
-                    showTokenEntry = true
-                }
-                .font(KFFont.caption(13))
-                .foregroundStyle(Color.kfAccentBlue)
+            Button("Restore Purchase") {
+                Task { await storeKit.restorePurchases() }
             }
-            .sheet(isPresented: $showTokenEntry) {
-                TokenActivationSheet()
-                    .environmentObject(storeKit)
-            }
+            .font(KFFont.caption(13))
+            .foregroundStyle(Color.kfAccentBlue)
 
-            Text("No account required. App Store subscribers can restore via Apple ID. Token-based subscribers recover using their original token or a registered recovery email. Payment will be charged to your Apple ID at confirmation of purchase. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period.")
+            Text("No account required. App Store subscribers can restore via Apple ID. Payment will be charged to your Apple ID at confirmation of purchase. Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period.")
                 .font(KFFont.caption(11))
                 .foregroundStyle(Color.kfTextMuted)
                 .multilineTextAlignment(.center)

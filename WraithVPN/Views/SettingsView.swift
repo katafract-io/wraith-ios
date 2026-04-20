@@ -20,7 +20,6 @@ struct SettingsView: View {
     @State private var showRevokeAlert     = false
     @State private var showRegenerateAlert = false
     @State private var isRestoring         = false
-    @State private var showTokenEntry      = false
     @State private var peerList: PeerListResponse? = nil
     @State private var isPeerListLoading = false
     @State private var peerListError: String? = nil
@@ -28,7 +27,6 @@ struct SettingsView: View {
     @State private var platformStatus: PlatformStatus? = nil
     @State private var statusCheckDone = false
     @State private var havenPrefsLoaded = false
-    @State private var showRecovery = false
     @State private var isAdminTokenState: Bool = KeychainHelper.shared.readOptional(for: .tokenIsAdmin) == "1"
     @State private var showIdentityLink = false
     @State private var identityLinkEmail = ""
@@ -811,19 +809,6 @@ struct SettingsView: View {
             }
             .disabled(isRestoring)
 
-            Divider().background(Color.kfBorder)
-
-            Button { showTokenEntry = true } label: {
-                SettingsRow(icon: "key.fill", label: "Activate with Token") {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.kfTextMuted)
-                }
-            }
-            .sheet(isPresented: $showTokenEntry) {
-                TokenActivationSheet()
-                    .environmentObject(storeKit)
-            }
         }
         .padding(KFSpacing.md)
         .kfCard()
@@ -950,20 +935,6 @@ struct SettingsView: View {
             .foregroundStyle(identityLinked ? Color.kfConnected : Color.kfTextPrimary)
             .sheet(isPresented: $showIdentityLink) {
                 identityLinkSheet
-            }
-
-            Divider().background(Color.kfBorder)
-
-            Button { showRecovery = true } label: {
-                SettingsRow(icon: "arrow.down.circle.fill", label: "Recover Access") {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.kfTextMuted)
-                }
-            }
-            .sheet(isPresented: $showRecovery) {
-                TokenRecoverySheet()
-                    .environmentObject(storeKit)
             }
 
             Divider().background(Color.kfBorder)
