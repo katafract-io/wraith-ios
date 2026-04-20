@@ -172,7 +172,7 @@ final class APIClient {
     }
 
     /// Validates an existing subscription token and returns its info.
-    /// Used on macOS to activate via a token from connect.katafract.com or iOS.
+    /// Used to verify subscription status during recovery or cross-device activation.
     func validateToken(_ token: String) async throws -> TokenInfoResponse {
         return try await request(APIRequest(.GET, "/v1/token/info", auth: false, extraHeaders: ["Authorization": "Bearer \(token)"]))
     }
@@ -221,7 +221,7 @@ final class APIClient {
         try await request(APIRequest(.GET, "/v1/status", timeout: 5))
     }
 
-    /// Initiates email-based token recovery for Stripe subscribers.
+    /// Initiates email-based token recovery for subscription holders.
     /// Returns a short-lived recovery_token on success.
     func recoverByEmail(_ email: String) async throws -> RecoveryInitResponse {
         struct Body: Encodable { let email: String }

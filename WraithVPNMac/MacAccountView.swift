@@ -11,7 +11,6 @@ struct MacAccountView: View {
     @EnvironmentObject var vpn:      WireGuardManager
     @EnvironmentObject var haven:    HavenDNSManager
 
-    @State private var showTokenEntry      = false
     @State private var showRevokeAlert     = false
     @State private var showSignOutAlert    = false
     @State private var showRegenerateAlert = false
@@ -57,9 +56,6 @@ struct MacAccountView: View {
         .background(Color.kfBackground)
         .preferredColorScheme(.dark)
         .navigationTitle("Account & Settings")
-        .sheet(isPresented: $showTokenEntry) {
-            TokenEntryView().environmentObject(storeKit)
-        }
         .sheet(isPresented: $showIdentityLink) {
             identityLinkSheet
         }
@@ -139,16 +135,9 @@ struct MacAccountView: View {
                         .font(.system(size: 18))
                 }
             } else {
-                HStack {
-                    Text("No active subscription")
-                        .font(KFFont.body(14))
-                        .foregroundStyle(Color.kfTextMuted)
-                    Spacer()
-                    Button("Activate") { showTokenEntry = true }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.kfAccentBlue)
-                        .controlSize(.small)
-                }
+                Text("No active subscription")
+                    .font(KFFont.body(14))
+                    .foregroundStyle(Color.kfTextMuted)
             }
         }
         .padding(KFSpacing.md)

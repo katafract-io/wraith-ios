@@ -56,7 +56,6 @@ struct MacUpgradeSheet: View {
     // Default selection: the tier the reason points at, annual billing
     @State private var selectedTier: WraithTier
     @State private var showAnnual: Bool = true
-    @State private var showTokenEntry = false
 
     init(reason: UpgradeReason) {
         self.reason = reason
@@ -129,9 +128,6 @@ struct MacUpgradeSheet: View {
         .frame(width: 420)
         .background(Color.kfBackground)
         .preferredColorScheme(.dark)
-        .sheet(isPresented: $showTokenEntry) {
-            TokenEntryView().environmentObject(storeKit)
-        }
         .onChange(of: storeKit.hasMultiHop) { hasIt in
             if hasIt && reason == .multiHopRequiresSovereign { dismiss() }
         }
@@ -368,13 +364,6 @@ struct MacUpgradeSheet: View {
             HStack(spacing: 16) {
                 Button("Restore Purchase") {
                     Task { await storeKit.restorePurchases() }
-                }
-                .font(KFFont.caption(11))
-                .foregroundStyle(Color.kfAccentBlue)
-                .buttonStyle(.plain)
-
-                Button("Have a token?") {
-                    showTokenEntry = true
                 }
                 .font(KFFont.caption(11))
                 .foregroundStyle(Color.kfAccentBlue)

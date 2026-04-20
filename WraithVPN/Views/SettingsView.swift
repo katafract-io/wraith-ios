@@ -92,7 +92,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your subscription token will be removed from this device. To sign in again, use the same method you originally purchased through — Restore Purchase for App Store, or enter your token if you purchased via another gateway.")
+            Text("Your subscription will be removed from this device. To sign in again, use Restore Purchase from the App Store.")
         }
         .alert("Reset VPN Configuration", isPresented: $showRevokeAlert) {
             Button("Reset", role: .destructive) {
