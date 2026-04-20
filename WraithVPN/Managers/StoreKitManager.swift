@@ -15,53 +15,55 @@ import Combine
 // MARK: - Product IDs
 
 enum WraithTier: Int, CaseIterable {
-    case havenPro   = 0
-    case enclave    = 1
-    case enclavePlus = 2
-    case seats      = 3
+    case haven      = 0  // Free
+    case enclave    = 1  // $8/mo · $64/yr
+    case sovereign  = 2  // $18/mo · $144/yr
+    case seats      = 3  // Device slots add-on
 
     var displayName: String {
         switch self {
-        case .havenPro:    return "Haven Pro"
-        case .enclave:     return "Enclave"
-        case .enclavePlus: return "Enclave+"
-        case .seats:       return "Device Slots"
+        case .haven:      return "Haven"
+        case .enclave:    return "Enclave"
+        case .sovereign:  return "Sovereign"
+        case .seats:      return "Device Slots"
         }
     }
 
     var accentColorHex: String {
         switch self {
-        case .havenPro:    return "#38bdf8"
-        case .enclave:     return "#a78bfa"
-        case .enclavePlus: return "#f59e0b"
-        case .seats:       return "#6b7280"
+        case .haven:      return "#38bdf8"
+        case .enclave:    return "#a78bfa"
+        case .sovereign:  return "#f59e0b"
+        case .seats:      return "#6b7280"
         }
     }
 
     var features: [String] {
         switch self {
-        case .havenPro:
+        case .haven:
             return [
                 "Ad & tracker blocking · 24/7",
-                "Family / Custom DNS filter tiers",
-                "Works on all apps & networks",
-                "5 devices"
+                "DoH DNS profile · all networks",
+                "Works on all apps",
+                "No account required"
             ]
         case .enclave:
             return [
-                "Everything in Haven Pro",
+                "Everything in Haven",
                 "Single-hop WireGuard VPN",
                 "10 global WraithGate exit nodes",
-                "Kill switch",
-                "5 devices"
+                "Kill switch · 5 devices",
+                "DNS tier picker",
+                "50 AI credits/month"
             ]
-        case .enclavePlus:
+        case .sovereign:
             return [
                 "Everything in Enclave",
                 "Multi-hop routing (2 nodes)",
                 "Entry + exit node separation",
-                "Maximum traffic privacy",
-                "5 devices"
+                "1 TB Vaultyx storage",
+                "Cross-device sync",
+                "Priority support"
             ]
         case .seats:
             return ["Adds 5 device slots to your current plan"]
@@ -84,60 +86,76 @@ enum WraithPeriod {
 }
 
 enum WraithProduct: String, CaseIterable {
+    // Grandfathered (old) products — keep for existing subscribers
     case havenProMonthly    = "com.katafract.haven.pro.monthly"
     case havenProAnnual     = "com.katafract.haven.pro.annual"
-    case enclaveMonthly     = "com.katafract.wraith.monthly"
-    case enclaveAnnual      = "com.katafract.wraith.annual"
     case enclavePlusMonthly = "com.katafract.wraith.plus.monthly"
     case enclavePlusAnnual  = "com.katafract.wraith.plus.annual"
+
+    // New v2 products (2026-04-20)
+    case enclaveMonthly     = "com.katafract.enclave.monthly"     // $8/mo
+    case enclaveAnnual      = "com.katafract.enclave.annual"      // $64/yr
+    case sovereignMonthly   = "com.katafract.sovereign.monthly"   // $18/mo
+    case sovereignAnnual    = "com.katafract.sovereign.annual"    // $144/yr
+
+    // Device slots add-on
     case seatPack5          = "com.katafract.wraith.seats.5"
 
     var displayName: String {
         switch self {
-        case .havenProMonthly:    return "Haven Pro — Monthly"
-        case .havenProAnnual:     return "Haven Pro — Annual"
+        case .havenProMonthly:    return "Haven Pro — Monthly (Grandfathered)"
+        case .havenProAnnual:     return "Haven Pro — Annual (Grandfathered)"
         case .enclaveMonthly:     return "Enclave — Monthly"
         case .enclaveAnnual:      return "Enclave — Annual"
-        case .enclavePlusMonthly: return "Enclave+ — Monthly"
-        case .enclavePlusAnnual:  return "Enclave+ — Annual"
+        case .enclavePlusMonthly: return "Enclave+ — Monthly (Grandfathered)"
+        case .enclavePlusAnnual:  return "Enclave+ — Annual (Grandfathered)"
+        case .sovereignMonthly:   return "Sovereign — Monthly"
+        case .sovereignAnnual:    return "Sovereign — Annual"
         case .seatPack5:          return "5 Device Slots"
         }
     }
 
     var tier: WraithTier {
         switch self {
-        case .havenProMonthly, .havenProAnnual:       return .havenPro
-        case .enclaveMonthly, .enclaveAnnual:         return .enclave
-        case .enclavePlusMonthly, .enclavePlusAnnual: return .enclavePlus
-        case .seatPack5:                              return .seats
+        case .havenProMonthly, .havenProAnnual:
+            return .haven
+        case .enclaveMonthly, .enclaveAnnual:
+            return .enclave
+        case .enclavePlusMonthly, .enclavePlusAnnual:
+            return .sovereign  // Old Enclave+ becomes Sovereign
+        case .sovereignMonthly, .sovereignAnnual:
+            return .sovereign
+        case .seatPack5:
+            return .seats
         }
     }
 
     var period: WraithPeriod {
         switch self {
-        case .havenProMonthly, .enclaveMonthly, .enclavePlusMonthly: return .monthly
-        case .havenProAnnual, .enclaveAnnual, .enclavePlusAnnual:    return .annual
-        case .seatPack5:                                             return .oneTime
+        case .havenProMonthly, .enclaveMonthly, .enclavePlusMonthly, .sovereignMonthly:
+            return .monthly
+        case .havenProAnnual, .enclaveAnnual, .enclavePlusAnnual, .sovereignAnnual:
+            return .annual
+        case .seatPack5:
+            return .oneTime
         }
     }
 
     /// The corresponding annual product for this monthly product (nil if already annual or one-time).
     var annualVariant: WraithProduct? {
         switch self {
-        case .havenProMonthly:    return .havenProAnnual
-        case .enclaveMonthly:     return .enclaveAnnual
-        case .enclavePlusMonthly: return .enclavePlusAnnual
-        default:                  return nil
+        case .enclaveMonthly:    return .enclaveAnnual
+        case .sovereignMonthly:  return .sovereignAnnual
+        default:                 return nil
         }
     }
 
     /// The corresponding monthly product for this annual product (nil if already monthly or one-time).
     var monthlyVariant: WraithProduct? {
         switch self {
-        case .havenProAnnual:     return .havenProMonthly
-        case .enclaveAnnual:      return .enclaveMonthly
-        case .enclavePlusAnnual:  return .enclavePlusMonthly
-        default:                  return nil
+        case .enclaveAnnual:     return .enclaveMonthly
+        case .sovereignAnnual:   return .sovereignMonthly
+        default:                 return nil
         }
     }
 }

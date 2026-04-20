@@ -107,7 +107,7 @@ struct ConnectView: View {
                 return
             }
             if newValue && !storeKit.hasMultiHop {
-                upgradeReason = .multiHopRequiresPlus
+                upgradeReason = .multiHopRequiresSovereign
                 suppressNextHopModeChange = true
                 multiHopMode = false
                 return
@@ -143,7 +143,7 @@ struct ConnectView: View {
 
     // MARK: - Helpers
 
-    /// Defaults to multi-hop mode the first time an Enclave+ user opens the app.
+    /// Defaults to multi-hop mode the first time a Sovereign user opens the app.
     /// Respects any explicit toggle the user has made since.
     private func applyDefaultHopMode() {
         guard storeKit.hasMultiHop, !hopModeExplicitlySet else { return }

@@ -13,29 +13,34 @@ import StoreKit
 enum UpgradeReason: Identifiable {
     var id: Int { highlightTier }
 
-    case vpnRequiresEnclave     // Haven → Enclave
-    case multiHopRequiresPlus   // Enclave → Enclave+
+    case vpnRequiresEnclave       // Haven → Enclave
+    case multiHopRequiresSovereign // Enclave → Sovereign
+    case storageRequiresSovereign  // Enclave → Sovereign
 
     var title: String {
         switch self {
-        case .vpnRequiresEnclave:   return "VPN Requires Enclave"
-        case .multiHopRequiresPlus: return "Multi-Hop Requires Enclave+"
+        case .vpnRequiresEnclave:        return "VPN Requires Enclave"
+        case .multiHopRequiresSovereign: return "Multi-Hop Requires Sovereign"
+        case .storageRequiresSovereign:  return "Storage Requires Sovereign"
         }
     }
 
     var subtitle: String {
         switch self {
         case .vpnRequiresEnclave:
-            return "Your DNS protection and ad blocking are active. Add a full WireGuard VPN tunnel with Enclave."
-        case .multiHopRequiresPlus:
-            return "Your single-hop VPN is active. Enclave+ routes your traffic through two separate nodes — neither hop can see both who you are and what you're doing."
+            return "Your DNS protection is active. Add a full WireGuard VPN tunnel with Enclave for traffic privacy."
+        case .multiHopRequiresSovereign:
+            return "Your single-hop VPN is active. Sovereign routes your traffic through two nodes — maximum privacy where neither hop knows both your identity and destination."
+        case .storageRequiresSovereign:
+            return "Upgrade to Sovereign to unlock 1 TB of encrypted cloud storage and cross-device sync with Vaultyx."
         }
     }
 
-    var highlightTier: Int { // 0 = Haven Pro, 1 = Enclave, 2 = Enclave+
+    var highlightTier: Int { // 0 = Enclave, 1 = Sovereign
         switch self {
-        case .vpnRequiresEnclave:   return 1
-        case .multiHopRequiresPlus: return 2
+        case .vpnRequiresEnclave:        return 0
+        case .multiHopRequiresSovereign: return 1
+        case .storageRequiresSovereign:  return 1
         }
     }
 }
@@ -55,8 +60,8 @@ struct MacUpgradeSheet: View {
 
     init(reason: UpgradeReason) {
         self.reason = reason
-        // Map highlightTier index → WraithTier
-        let tiers: [WraithTier] = [.havenPro, .enclave, .enclavePlus]
+        // Map highlightTier index → WraithTier (0 = Enclave, 1 = Sovereign)
+        let tiers: [WraithTier] = [.enclave, .sovereign]
         let idx = min(reason.highlightTier, tiers.count - 1)
         _selectedTier = State(initialValue: tiers[idx])
     }
@@ -65,13 +70,11 @@ struct MacUpgradeSheet: View {
 
     private var selectedProduct: WraithProduct {
         switch (selectedTier, showAnnual) {
-        case (.havenPro,    true):  return .havenProAnnual
-        case (.havenPro,    false): return .havenProMonthly
-        case (.enclave,     true):  return .enclaveAnnual
-        case (.enclave,     false): return .enclaveMonthly
-        case (.enclavePlus, true):  return .enclavePlusAnnual
-        case (.enclavePlus, false): return .enclavePlusMonthly
-        default:                    return .enclaveAnnual
+        case (.enclave,    true):  return .enclaveAnnual
+        case (.enclave,    false): return .enclaveMonthly
+        case (.sovereign,  true):  return .sovereignAnnual
+        case (.sovereign,  false): return .sovereignMonthly
+        default:                   return .enclaveAnnual
         }
     }
 
@@ -90,7 +93,7 @@ struct MacUpgradeSheet: View {
                 Image(systemName: "lock.shield.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(accentColor)
-                Text("Choose your Enclave")
+                Text("Choose Your Privacy")
                     .font(KFFont.heading(15))
                     .foregroundStyle(.white)
                 Spacer()
@@ -130,7 +133,10 @@ struct MacUpgradeSheet: View {
             TokenEntryView().environmentObject(storeKit)
         }
         .onChange(of: storeKit.hasMultiHop) { hasIt in
-            if hasIt && reason == .multiHopRequiresPlus { dismiss() }
+            if hasIt && reason == .multiHopRequiresSovereign { dismiss() }
+        }
+        .onChange(of: storeKit.hasSovereign) { hasIt in
+            if hasIt && reason == .storageRequiresSovereign { dismiss() }
         }
         .onChange(of: storeKit.hasVPN) { hasIt in
             if hasIt && reason == .vpnRequiresEnclave { dismiss() }
@@ -141,7 +147,7 @@ struct MacUpgradeSheet: View {
 
     private var tierSelector: some View {
         HStack(spacing: 8) {
-            ForEach([WraithTier.havenPro, .enclave, .enclavePlus], id: \.rawValue) { tier in
+            ForEach([WraithTier.enclave, .sovereign], id: \.rawValue) { tier in
                 MacTierTabView(tier: tier, isSelected: selectedTier == tier)
                     .onTapGesture {
                         withAnimation(.easeInOut(duration: 0.18)) { selectedTier = tier }
@@ -192,12 +198,8 @@ struct MacUpgradeSheet: View {
     }
 
     private var savingsBadge: String? {
-        let monthlyId = showAnnual
-            ? selectedProduct.monthlyVariant?.rawValue
-            : selectedProduct.rawValue
-        let annualId = showAnnual
-            ? selectedProduct.rawValue
-            : selectedProduct.annualVariant?.rawValue
+        let monthlyId = monthlyProduct(for: selectedTier)?.rawValue
+        let annualId = annualProduct(for: selectedTier)?.rawValue
 
         guard let mId = monthlyId,
               let aId = annualId,
@@ -209,8 +211,31 @@ struct MacUpgradeSheet: View {
         guard monthlyAnnualised > 0 else { return nil }
         let savingDecimal = (monthlyAnnualised - annual.price) / monthlyAnnualised * 100
         guard savingDecimal > 0 else { return nil }
-        let savingInt = Int((savingDecimal as NSDecimalNumber).intValue)
+        let savingInt = Int(NSDecimalNumber(decimal: savingDecimal).doubleValue.rounded())
+        guard savingInt > 0 else { return nil }
         return "Save \(savingInt)%"
+    }
+
+    private func monthlyProduct(for tier: WraithTier) -> WraithProduct? {
+        switch tier {
+        case .enclave:
+            return .enclaveMonthly
+        case .sovereign:
+            return .sovereignMonthly
+        case .haven, .seats:
+            return nil
+        }
+    }
+
+    private func annualProduct(for tier: WraithTier) -> WraithProduct? {
+        switch tier {
+        case .enclave:
+            return .enclaveAnnual
+        case .sovereign:
+            return .sovereignAnnual
+        case .haven, .seats:
+            return nil
+        }
     }
 
     // MARK: - Feature card
@@ -321,7 +346,7 @@ struct MacUpgradeSheet: View {
         Button {
             dismiss()
         } label: {
-            Text("Continue with Free Haven")
+            Text("Start with Free Haven DNS")
                 .font(KFFont.caption(12))
                 .foregroundStyle(Color.kfTextMuted)
                 .frame(maxWidth: .infinity)

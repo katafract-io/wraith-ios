@@ -13,7 +13,7 @@ struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
     var onContinueFree: (() -> Void)? = nil
 
-    // Default: Enclave annual (best value, matches prior behaviour)
+    // Default: Enclave annual (best value)
     @State private var selectedProductId: String = WraithProduct.enclaveAnnual.rawValue
     @State private var selectedTier: WraithTier  = .enclave
     @State private var showAnnual: Bool          = true
@@ -24,13 +24,11 @@ struct PaywallView: View {
     /// The currently-selected WraithProduct enum value.
     private var selectedProduct: WraithProduct {
         switch (selectedTier, showAnnual) {
-        case (.havenPro,    true):  return .havenProAnnual
-        case (.havenPro,    false): return .havenProMonthly
-        case (.enclave,     true):  return .enclaveAnnual
-        case (.enclave,     false): return .enclaveMonthly
-        case (.enclavePlus, true):  return .enclavePlusAnnual
-        case (.enclavePlus, false): return .enclavePlusMonthly
-        default:                    return .enclaveAnnual
+        case (.enclave,    true):  return .enclaveAnnual
+        case (.enclave,    false): return .enclaveMonthly
+        case (.sovereign,  true):  return .sovereignAnnual
+        case (.sovereign,  false): return .sovereignMonthly
+        default:                   return .enclaveAnnual
         }
     }
 
@@ -99,22 +97,22 @@ struct PaywallView: View {
                 .frame(maxWidth: 280, maxHeight: 200)
                 .shadow(color: Color.kfAccentPurple.opacity(0.2), radius: 28, y: 14)
 
-            Text("Choose your Enclave")
+            Text("Choose Your Privacy")
                 .font(KFFont.display(30))
                 .foregroundStyle(.white)
 
-            Text("Haven DNS protects you everywhere — always on, no VPN required.\nAdd WraithVPN for full traffic privacy.")
+            Text("Haven DNS is free forever. Enclave adds VPN. Sovereign adds storage & sync.")
                 .font(KFFont.body(15))
                 .foregroundStyle(Color.kfTextSecondary)
                 .multilineTextAlignment(.center)
         }
     }
 
-    // MARK: - Tier selector (3 cards)
+    // MARK: - Tier selector (2 cards: Enclave + Sovereign)
 
     private var tierSelector: some View {
         HStack(spacing: KFSpacing.sm) {
-            ForEach([WraithTier.havenPro, .enclave, .enclavePlus], id: \.rawValue) { tier in
+            ForEach([WraithTier.enclave, .sovereign], id: \.rawValue) { tier in
                 TierTabView(
                     tier: tier,
                     isSelected: selectedTier == tier
@@ -164,14 +162,10 @@ struct PaywallView: View {
         .animation(.easeInOut(duration: 0.2), value: isActive)
     }
 
-    /// Compute approximate annual savings vs monthly × 12.
+    /// Compute annual savings vs monthly × 12.
     private var savingsBadge: String? {
-        let monthlyId = showAnnual
-            ? selectedProduct.monthlyVariant?.rawValue
-            : selectedProduct.rawValue
-        let annualId = showAnnual
-            ? selectedProduct.rawValue
-            : selectedProduct.annualVariant?.rawValue
+        let monthlyId = monthlyProduct(for: selectedTier)?.rawValue
+        let annualId = annualProduct(for: selectedTier)?.rawValue
 
         guard let mId = monthlyId,
               let aId = annualId,
@@ -183,8 +177,31 @@ struct PaywallView: View {
         guard monthlyAnnualised > 0 else { return nil }
         let savingDecimal = (monthlyAnnualised - annual.price) / monthlyAnnualised * 100
         guard savingDecimal > 0 else { return nil }
-        let savingInt = Int((savingDecimal as NSDecimalNumber).intValue)
+        let savingInt = Int(NSDecimalNumber(decimal: savingDecimal).doubleValue.rounded())
+        guard savingInt > 0 else { return nil }
         return "Save \(savingInt)%"
+    }
+
+    private func monthlyProduct(for tier: WraithTier) -> WraithProduct? {
+        switch tier {
+        case .enclave:
+            return .enclaveMonthly
+        case .sovereign:
+            return .sovereignMonthly
+        case .haven, .seats:
+            return nil
+        }
+    }
+
+    private func annualProduct(for tier: WraithTier) -> WraithProduct? {
+        switch tier {
+        case .enclave:
+            return .enclaveAnnual
+        case .sovereign:
+            return .sovereignAnnual
+        case .haven, .seats:
+            return nil
+        }
     }
 
     // MARK: - Feature card
@@ -281,10 +298,10 @@ struct PaywallView: View {
     private var freeTierButton: some View {
         VStack(spacing: KFSpacing.sm) {
             VStack(alignment: .leading, spacing: KFSpacing.xs) {
-                Text("Start free with Haven DNS")
+                Text("Haven DNS is free forever")
                     .font(KFFont.heading(18))
                     .foregroundStyle(.white)
-                Text("Haven DNS is free forever — blocks ads and basic trackers at the DNS level, on every network, always on. Upgrade to Haven Pro or WraithVPN when you want stronger protection or the full Enclave VPN.")
+                Text("Haven DNS protects every app on your device — blocks ads, trackers, and malware at the DNS level. Works on all networks, no account needed. Upgrade to Enclave for VPN protection or Sovereign for cloud storage and sync.")
                     .font(KFFont.body(14))
                     .foregroundStyle(Color.kfTextSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -296,10 +313,10 @@ struct PaywallView: View {
                 if onContinueFree == nil { dismiss() }
             } label: {
                 VStack(spacing: 8) {
-                    Text("Continue With Haven DNS Free")
+                    Text("Start With Haven DNS Free")
                         .font(KFFont.heading(16))
                         .foregroundStyle(.white)
-                    Text("Blocks ads and basic trackers — no subscription required.")
+                    Text("Complete DNS protection — no card or subscription required.")
                         .font(KFFont.caption(12))
                         .foregroundStyle(Color.kfTextSecondary)
                         .multilineTextAlignment(.center)
