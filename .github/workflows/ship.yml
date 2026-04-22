@@ -81,6 +81,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
+          set -o pipefail
           xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN \
             -configuration Release -destination "generic/platform=iOS" \
             -archivePath "$ARCHIVE_PATH" \
@@ -88,7 +89,14 @@ jobs:
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            archive 2>&1 | grep -E "error:|warning:|\*\* |Signing Identity|Provisioning Profile|WireGuardTunnel" | tail -40
+            archive 2>&1 | tee /tmp/archive.log | grep -E "error:|warning:|\*\* |Signing Identity|Provisioning Profile|WireGuardTunnel" | tail -40
+          # Sanity check the archive is complete (has Info.plist at top level)
+          if [ ! -f "$ARCHIVE_PATH/Info.plist" ]; then
+            echo "::error::archive incomplete (missing Info.plist). Tail of full archive log:"
+            tail -80 /tmp/archive.log
+            exit 1
+          fi
+          echo "archive OK: $(ls -la $ARCHIVE_PATH/Info.plist)"
 
       - name: Ensure tunnel extension is embedded (no re-sign; exportArchive resigns)
         run: |
