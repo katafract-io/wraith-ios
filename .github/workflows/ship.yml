@@ -1,0 +1,125 @@
+name: Ship to TestFlight
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      skip_upload:
+        description: 'Skip TestFlight upload (archive only)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: ship-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  archive-and-upload:
+    name: Archive + TestFlight upload
+    runs-on: [self-hosted, macOS, ios-build]
+    timeout-minutes: 30
+
+    env:
+      KEYCHAIN: /Users/christianflores/Library/Keychains/katafract-build.keychain-db
+      ASC_KEY_ID: 3N7X2443W9
+      ASC_ISSUER_ID: cc920828-bbbd-40ca-9135-fb1a5c30dacd
+      ASC_KEY_PATH: /Users/christianflores/private_keys/AuthKey_3N7X2443W9.p8
+      EXPORT_OPTIONS: /tmp/ExportOptions-manual.plist
+      ARCHIVE_PATH: /tmp/Wraith.xcarchive
+      EXPORT_PATH: /tmp/Wraith-export
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Unlock keychain + set codesign partition list
+        run: |
+          security unlock-keychain -p "" "$KEYCHAIN"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCHAIN" >/dev/null 2>&1
+          security find-identity -v -p codesigning "$KEYCHAIN" | head -5
+
+      - name: Resolve SPM packages
+        run: |
+          xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN -resolvePackageDependencies 2>&1 | tail -5
+
+      - name: Bump CFBundleVersion to run id
+        run: |
+          BUILD_NUM=$((GITHUB_RUN_NUMBER + 400))
+          echo "Bumping to $BUILD_NUM"
+          sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*/CURRENT_PROJECT_VERSION = $BUILD_NUM/g" WraithVPN.xcodeproj/project.pbxproj
+          grep CURRENT_PROJECT_VERSION WraithVPN.xcodeproj/project.pbxproj | head -3
+
+      - name: Clean prior archive
+        run: rm -rf "$ARCHIVE_PATH" "$EXPORT_PATH"
+
+      - name: Archive
+        run: |
+          xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN \
+            -configuration Release -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            archive 2>&1 | grep -E "error:|warning:|\*\* |Signing Identity|Provisioning Profile|WireGuardTunnel" | tail -40
+
+      - name: Verify tunnel embed + manual embed fallback
+        run: |
+          APP="$ARCHIVE_PATH/Products/Applications/WraithVPN.app"
+          TUNNEL=~/Library/Developer/Xcode/DerivedData/Build/Intermediates.noindex/ArchiveIntermediates/WraithVPN/BuildProductsPath/Release-iphoneos/WireGuardTunnel.appex
+          if [ ! -d "$APP/PlugIns/WireGuardTunnel.appex" ]; then
+            echo "tunnel missing from archive — manually embedding"
+            mkdir -p "$APP/PlugIns"
+            cp -R "$TUNNEL" "$APP/PlugIns/"
+            echo "manual embed done"
+          fi
+          ls -la "$APP/PlugIns/"
+
+      - name: Export IPA (manual signing, Distribution)
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -exportPath "$EXPORT_PATH" 2>&1 | grep -E "error:|\*\* " | tail -10
+          ls -la "$EXPORT_PATH"
+
+      - name: Verify IPA has tunnel extension
+        run: |
+          rm -rf /tmp/verify-ipa && mkdir /tmp/verify-ipa
+          unzip -q "$EXPORT_PATH/WraithVPN.ipa" -d /tmp/verify-ipa
+          ls /tmp/verify-ipa/Payload/WraithVPN.app/PlugIns/
+          if [ ! -d /tmp/verify-ipa/Payload/WraithVPN.app/PlugIns/WireGuardTunnel.appex ]; then
+            echo "::error::tunnel extension missing from final IPA — aborting upload"
+            exit 1
+          fi
+
+      - name: Upload to TestFlight
+        if: ${{ github.event.inputs.skip_upload != 'true' }}
+        run: |
+          xcrun altool --upload-app \
+            -f "$EXPORT_PATH/WraithVPN.ipa" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tee /tmp/altool.log | tail -20
+          # Fail the job if altool didn't report SUCCESS
+          grep -q "UPLOAD SUCCEEDED" /tmp/altool.log
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Ship result" >> "$GITHUB_STEP_SUMMARY"
+          if grep -q "UPLOAD SUCCEEDED" /tmp/altool.log 2>/dev/null; then
+            UUID=$(grep -oE 'Delivery UUID: [a-f0-9-]+' /tmp/altool.log | head -1 | cut -d' ' -f3)
+            BUILD_NUM=$((GITHUB_RUN_NUMBER + 400))
+            echo "- ✅ Build $BUILD_NUM uploaded to TestFlight" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Delivery UUID: $UUID" >> "$GITHUB_STEP_SUMMARY"
+            echo "- IPA size: $(ls -lh $EXPORT_PATH/WraithVPN.ipa | awk '{print $5}')" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- ❌ Upload did not complete" >> "$GITHUB_STEP_SUMMARY"
+          fi
