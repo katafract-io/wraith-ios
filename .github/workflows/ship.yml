@@ -35,6 +35,13 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Checkout sibling KatafractStyle (SPM local path)
+        uses: actions/checkout@v4
+        with:
+          repository: katafract-io/KatafractStyle
+          path: ../KatafractStyle
+          fetch-depth: 1
+
       - name: Load runner-local env (paths)
         run: |
           if [ ! -f "$HOME/runner-env/wraith.env" ]; then
