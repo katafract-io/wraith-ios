@@ -1050,6 +1050,7 @@ final class WireGuardManager: ObservableObject {
         try await mgr.saveToPreferences()
         try await mgr.loadFromPreferences()
         self.manager = mgr
+        observeStatus()
     }
 
 
