@@ -35,12 +35,16 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Checkout sibling KatafractStyle (SPM local path)
-        uses: actions/checkout@v4
-        with:
-          repository: katafract-io/KatafractStyle
-          path: ../KatafractStyle
-          fetch-depth: 1
+      - name: Clone sibling KatafractStyle (SPM local path)
+        run: |
+          PARENT="$(dirname "$GITHUB_WORKSPACE")"
+          if [ ! -d "$PARENT/KatafractStyle/.git" ]; then
+            git clone --depth 1 https://github.com/katafract-io/KatafractStyle "$PARENT/KatafractStyle"
+          else
+            git -C "$PARENT/KatafractStyle" fetch --depth 1 origin main
+            git -C "$PARENT/KatafractStyle" reset --hard origin/main
+          fi
+          ls "$PARENT/KatafractStyle"
 
       - name: Load runner-local env (paths)
         run: |
