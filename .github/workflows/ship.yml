@@ -1,12 +1,17 @@
 name: Ship to TestFlight
 
+# Runs on the self-hosted macOS runner registered on the Katafract build machine.
+# No secrets or machine-specific paths live in this file.
+# - Identifiers (ASC API key + issuer) come from org-level Actions secrets.
+# - Paths (keychain, API key file, export options plist) come from a runner-local
+#   env file at ~/runner-env/wraith.env which is NOT in this repo.
+# - Code-signing cert + provisioning profiles live in the runner's keychain +
+#   Xcode's Provisioning Profiles directory, set up once on the runner.
+
 on:
   push:
-    branches:
-      - main
-      - release/*
-    tags:
-      - 'v*'
+    branches: [ main, "release/*" ]
+    tags: [ "v*" ]
   workflow_dispatch:
     inputs:
       skip_upload:
@@ -21,17 +26,8 @@ concurrency:
 jobs:
   archive-and-upload:
     name: Archive + TestFlight upload
-    runs-on: [self-hosted, macOS, ios-build]
+    runs-on: [ self-hosted, macOS, ios-build ]
     timeout-minutes: 30
-
-    env:
-      KEYCHAIN: /Users/christianflores/Library/Keychains/katafract-build.keychain-db
-      ASC_KEY_ID: 3N7X2443W9
-      ASC_ISSUER_ID: cc920828-bbbd-40ca-9135-fb1a5c30dacd
-      ASC_KEY_PATH: /Users/christianflores/private_keys/AuthKey_3N7X2443W9.p8
-      EXPORT_OPTIONS: /tmp/ExportOptions-manual.plist
-      ARCHIVE_PATH: /tmp/Wraith.xcarchive
-      EXPORT_PATH: /tmp/Wraith-export
 
     steps:
       - name: Checkout
@@ -39,7 +35,17 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Unlock keychain + set codesign partition list
+      - name: Load runner-local env (paths)
+        run: |
+          if [ ! -f "$HOME/runner-env/wraith.env" ]; then
+            echo "::error::Missing $HOME/runner-env/wraith.env on runner — see runbook"
+            exit 1
+          fi
+          # Re-emit as GITHUB_ENV so subsequent steps can reference $KEYCHAIN etc.
+          grep -v '^#' "$HOME/runner-env/wraith.env" | grep '=' >> "$GITHUB_ENV"
+          cat "$GITHUB_ENV" | grep -E "^(KEYCHAIN|ASC_KEY_PATH|EXPORT_OPTIONS|ARCHIVE_PATH|EXPORT_PATH)=" | sed 's/=.*/=***/'
+
+      - name: Unlock keychain + codesign partition list
         run: |
           security unlock-keychain -p "" "$KEYCHAIN"
           security set-keychain-settings -lut 7200 "$KEYCHAIN"
@@ -47,20 +53,22 @@ jobs:
           security find-identity -v -p codesigning "$KEYCHAIN" | head -5
 
       - name: Resolve SPM packages
-        run: |
-          xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN -resolvePackageDependencies 2>&1 | tail -5
+        run: xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN -resolvePackageDependencies 2>&1 | tail -5
 
-      - name: Bump CFBundleVersion to run id
+      - name: Bump CFBundleVersion
         run: |
           BUILD_NUM=$((GITHUB_RUN_NUMBER + 400))
-          echo "Bumping to $BUILD_NUM"
+          echo "Bumping CFBundleVersion to $BUILD_NUM"
           sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*/CURRENT_PROJECT_VERSION = $BUILD_NUM/g" WraithVPN.xcodeproj/project.pbxproj
-          grep CURRENT_PROJECT_VERSION WraithVPN.xcodeproj/project.pbxproj | head -3
+          echo "BUILD_NUM=$BUILD_NUM" >> "$GITHUB_ENV"
 
       - name: Clean prior archive
         run: rm -rf "$ARCHIVE_PATH" "$EXPORT_PATH"
 
       - name: Archive
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN \
             -configuration Release -destination "generic/platform=iOS" \
@@ -71,19 +79,29 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             archive 2>&1 | grep -E "error:|warning:|\*\* |Signing Identity|Provisioning Profile|WireGuardTunnel" | tail -40
 
-      - name: Verify tunnel embed + manual embed fallback
+      - name: Ensure tunnel extension is embedded + re-sign if needed
         run: |
           APP="$ARCHIVE_PATH/Products/Applications/WraithVPN.app"
-          TUNNEL=~/Library/Developer/Xcode/DerivedData/Build/Intermediates.noindex/ArchiveIntermediates/WraithVPN/BuildProductsPath/Release-iphoneos/WireGuardTunnel.appex
+          TUNNEL_BUILT=$(find "$HOME/Library/Developer/Xcode/DerivedData" -name WireGuardTunnel.appex -path "*BuildProductsPath*iphoneos*" 2>/dev/null | head -1)
           if [ ! -d "$APP/PlugIns/WireGuardTunnel.appex" ]; then
-            echo "tunnel missing from archive — manually embedding"
+            if [ -z "$TUNNEL_BUILT" ]; then
+              echo "::error::tunnel never built — check scheme has WireGuardTunnel BuildActionEntry"
+              exit 1
+            fi
+            echo "tunnel missing from archive — embedding from $TUNNEL_BUILT"
             mkdir -p "$APP/PlugIns"
-            cp -R "$TUNNEL" "$APP/PlugIns/"
-            echo "manual embed done"
+            cp -R "$TUNNEL_BUILT" "$APP/PlugIns/"
+            # Re-sign the main app so CodeResources hash includes the new appex.
+            # Uses whichever Apple Development identity is in the keychain.
+            DEV_ID=$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/Apple Development/{print $2; exit}')
+            if [ -n "$DEV_ID" ]; then
+              echo "re-signing app with $DEV_ID"
+              codesign --force --sign "$DEV_ID" --preserve-metadata=entitlements,identifier "$APP" 2>&1 | tail -5
+            fi
           fi
           ls -la "$APP/PlugIns/"
 
-      - name: Export IPA (manual signing, Distribution)
+      - name: Export IPA (Distribution, manual signing)
         run: |
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
@@ -95,19 +113,21 @@ jobs:
         run: |
           rm -rf /tmp/verify-ipa && mkdir /tmp/verify-ipa
           unzip -q "$EXPORT_PATH/WraithVPN.ipa" -d /tmp/verify-ipa
-          ls /tmp/verify-ipa/Payload/WraithVPN.app/PlugIns/
           if [ ! -d /tmp/verify-ipa/Payload/WraithVPN.app/PlugIns/WireGuardTunnel.appex ]; then
             echo "::error::tunnel extension missing from final IPA — aborting upload"
             exit 1
           fi
+          echo "tunnel present in IPA"
 
       - name: Upload to TestFlight
         if: ${{ github.event.inputs.skip_upload != 'true' }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           xcrun altool --upload-app \
             -f "$EXPORT_PATH/WraithVPN.ipa" -t ios \
             --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tee /tmp/altool.log | tail -20
-          # Fail the job if altool didn't report SUCCESS
           grep -q "UPLOAD SUCCEEDED" /tmp/altool.log
 
       - name: Summary
@@ -116,10 +136,10 @@ jobs:
           echo "## Ship result" >> "$GITHUB_STEP_SUMMARY"
           if grep -q "UPLOAD SUCCEEDED" /tmp/altool.log 2>/dev/null; then
             UUID=$(grep -oE 'Delivery UUID: [a-f0-9-]+' /tmp/altool.log | head -1 | cut -d' ' -f3)
-            BUILD_NUM=$((GITHUB_RUN_NUMBER + 400))
-            echo "- ✅ Build $BUILD_NUM uploaded to TestFlight" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Build $BUILD_NUM uploaded to TestFlight" >> "$GITHUB_STEP_SUMMARY"
             echo "- Delivery UUID: $UUID" >> "$GITHUB_STEP_SUMMARY"
-            echo "- IPA size: $(ls -lh $EXPORT_PATH/WraithVPN.ipa | awk '{print $5}')" >> "$GITHUB_STEP_SUMMARY"
+            SIZE=$(ls -lh "$EXPORT_PATH/WraithVPN.ipa" 2>/dev/null | awk '{print $5}')
+            echo "- IPA size: $SIZE" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "- ❌ Upload did not complete" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Upload did not complete" >> "$GITHUB_STEP_SUMMARY"
           fi
