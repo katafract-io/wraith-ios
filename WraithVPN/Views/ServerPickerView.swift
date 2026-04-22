@@ -208,8 +208,7 @@ struct ServerPickerView: View {
 
     private func selectServer(_ server: VPNServer) {
         servers.selectServer(server)
-        let gen = UIImpactFeedbackGenerator(style: .medium)
-        gen.impactOccurred()
+        KataHaptic.saved.fire()
 
         // If already connected to a different node, switch immediately.
         let isConnected = vpn.status == .connected || vpn.status == .connecting
