@@ -98,20 +98,27 @@ jobs:
           fi
           echo "archive OK: $(ls -la $ARCHIVE_PATH/Info.plist)"
 
-      - name: Ensure tunnel extension is embedded (no re-sign; exportArchive resigns)
+      - name: Ensure tunnel extension is embedded (deref symlinks; exportArchive resigns)
         run: |
           APP="$ARCHIVE_PATH/Products/Applications/WraithVPN.app"
-          TUNNEL_BUILT=$(find "$HOME/Library/Developer/Xcode/DerivedData" -name WireGuardTunnel.appex -path "*BuildProductsPath*iphoneos*" 2>/dev/null | head -1)
-          if [ ! -d "$APP/PlugIns/WireGuardTunnel.appex" ]; then
-            if [ -z "$TUNNEL_BUILT" ]; then
-              echo "::error::tunnel never built — check scheme has WireGuardTunnel BuildActionEntry"
-              exit 1
-            fi
-            echo "tunnel missing from archive — copying from $TUNNEL_BUILT"
-            mkdir -p "$APP/PlugIns"
-            cp -R "$TUNNEL_BUILT" "$APP/PlugIns/"
+          # Archive may contain a symlink pointing to UninstalledProducts, which
+          # exportArchive copies verbatim (ending up as an 83-byte symlink in the IPA).
+          # Force-replace with the real directory from UninstalledProducts.
+          TUNNEL_REAL=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -name WireGuardTunnel.appex -path "*UninstalledProducts*iphoneos*" 2>/dev/null | head -1)
+          if [ -z "$TUNNEL_REAL" ]; then
+            TUNNEL_REAL=$(find "$HOME/Library/Developer/Xcode/DerivedData" -type d -name WireGuardTunnel.appex -path "*BuildProductsPath*iphoneos*" 2>/dev/null | head -1)
           fi
+          if [ -z "$TUNNEL_REAL" ]; then
+            echo "::error::tunnel never built — check scheme has WireGuardTunnel BuildActionEntry"
+            exit 1
+          fi
+          echo "real tunnel at: $TUNNEL_REAL"
+          mkdir -p "$APP/PlugIns"
+          rm -rf "$APP/PlugIns/WireGuardTunnel.appex"
+          cp -R "$TUNNEL_REAL" "$APP/PlugIns/"
           ls -la "$APP/PlugIns/"
+          echo "--- tunnel contents ---"
+          ls "$APP/PlugIns/WireGuardTunnel.appex/" | head -10
 
       - name: Export IPA (Distribution, manual signing)
         run: |
