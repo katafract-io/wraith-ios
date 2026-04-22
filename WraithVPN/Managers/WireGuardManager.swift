@@ -987,46 +987,55 @@ final class WireGuardManager: ObservableObject {
     }
 
     private func installProfile(configText: String, server: VPNServer) async throws {
-        guard let mgr = manager else { return }
+        // 1. Stop any running tunnel (own or other) so we don't fight iOS state.
+        await stopAllActiveTunnels()
 
-        // If the tunnel extension is running, stop it before installing a new config.
-        // saveToPreferences() updates on-disk config but the running extension keeps
-        // the OLD config in memory — startTunnel() on an active tunnel is a no-op.
-        let currentStatus = mgr.connection.status
-        if currentStatus == .connected || currentStatus == .connecting || currentStatus == .reasserting {
-            mgr.connection.stopVPNTunnel()
-            // Wait up to 3s for the extension to stop
-            for _ in 0..<30 {
-                try? await Task.sleep(for: .milliseconds(100))
-                if mgr.connection.status == .disconnected { break }
+        // 2. Always remove ALL prior profiles for our bundle ID before installing.
+        //    iOS NEVPN caches protocol attributes across saveToPreferences calls;
+        //    on config changes (wg0 → wg1, multi-hop → single, region switch),
+        //    the tunnel goes connecting→disconnected within ms because the
+        //    extension keeps the OLD config in memory. Wiping forces a clean slate.
+        if let allMgrs = try? await NETunnelProviderManager.loadAllFromPreferences() {
+            for mgr in allMgrs where (mgr.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == tunnelBundleId {
+                try? await mgr.removeFromPreferences()
             }
         }
+        self.manager = nil  // ours is gone now too
 
+        // 3. Brief settle — give NEVPN subsystem time to release state.
+        try? await Task.sleep(for: .milliseconds(250))
+
+        // 4. Build a fresh manager + profile.
+        let mgr = NETunnelProviderManager()
         let proto = NETunnelProviderProtocol()
         proto.providerBundleIdentifier = tunnelBundleId
         proto.serverAddress = server.endpoints.primary
-        // Pass the WireGuard config to the tunnel extension via providerConfiguration
         proto.providerConfiguration = [
             "wgConfig": configText,
             "serverName": server.cityName,
         ]
-        // Full mode: OS-level kill switch — no internet if tunnel drops.
-        // Standard mode: traffic routes through WireGuard but iOS can fall back.
         proto.includeAllNetworks = (tunnelMode == .full)
         proto.excludeLocalNetworks = true
-
-        let onDemandRule = NEOnDemandRuleConnect()
-        onDemandRule.interfaceTypeMatch = .any
 
         mgr.protocolConfiguration = proto
         mgr.localizedDescription  = "WraithVPN — \(server.cityName)"
         mgr.isEnabled             = true
-        mgr.onDemandRules         = [onDemandRule]
-        mgr.isOnDemandEnabled     = autoConnectEnabled
+
+        // 5. On-demand only if user enabled it. Don't add a permanent connect rule
+        //    on every install — that fights manual disconnect and confuses NEVPN.
+        if autoConnectEnabled {
+            let onDemandRule = NEOnDemandRuleConnect()
+            onDemandRule.interfaceTypeMatch = .any
+            mgr.onDemandRules = [onDemandRule]
+            mgr.isOnDemandEnabled = true
+        } else {
+            mgr.onDemandRules = []
+            mgr.isOnDemandEnabled = false
+        }
 
         try await mgr.saveToPreferences()
-        // Reload to pick up saved preferences (required before starting)
         try await mgr.loadFromPreferences()
+        self.manager = mgr
     }
 
     /// Updates isOnDemandEnabled on the saved NE profile without touching the config.
