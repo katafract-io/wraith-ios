@@ -48,7 +48,8 @@ struct ConnectView: View {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
                         .stroke(Color.kataGold.opacity(0.55), lineWidth: 0.5)
                         .padding(.horizontal, 16)
-                        .padding(.vertical, proxy.safeAreaInsets.top + 8)
+                        .padding(.top, max(proxy.safeAreaInsets.top - 4, 4))
+                        .padding(.bottom, max(proxy.safeAreaInsets.bottom - 4, 4))
                         .transition(.opacity.animation(.easeInOut(duration: 0.6)))
                 }
 
