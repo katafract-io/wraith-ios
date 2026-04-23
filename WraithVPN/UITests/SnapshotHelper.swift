@@ -1,6 +1,7 @@
 import XCTest
 
-func setupSnapshot(_ app: XCUIApplication) {
-    continueAfterFailure = false
-    app.launchArguments += ["-com.apple.CoreData.ConcurrencyDebug", "0"]
+class SnapshotHelper: XCTestCase {
+    static func setupSnapshot(_ app: XCUIApplication) {
+        app.launchArguments += ["-com.apple.CoreData.ConcurrencyDebug", "0"]
+    }
 }

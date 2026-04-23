@@ -79,7 +79,7 @@ final class WraithVPNScreenshotTests: XCTestCase {
 
     private func launch(flags: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        setupSnapshot(app)
+        SnapshotHelper.setupSnapshot(app)
         app.launchArguments += flags
         app.launch()
         return app
