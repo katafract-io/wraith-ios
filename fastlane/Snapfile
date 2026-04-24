@@ -1,8 +1,8 @@
 # Katafract screenshot pipeline — fastlane snapshot config
 
 devices([
-  "iPhone 17 Pro Max"
-  "iPad Pro 13-inch (M5)"
+  "iPhone 17 Pro Max",
+  "iPad Pro 13-inch (M5)",
 ])
 
 ios_version("26.4")
