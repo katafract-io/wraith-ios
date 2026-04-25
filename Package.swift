@@ -18,10 +18,7 @@ let package = Package(
         .macOS(.v14),
     ],
     dependencies: [
-        .package(
-            url: "https://github.com/WireGuard/wireguard-apple",
-            from: "1.0.15"
-        ),
+        .package(path: "./wireguard-apple"),
     ],
     targets: [
         // This manifest is informational only for developers cloning the repo.
