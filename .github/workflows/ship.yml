@@ -118,7 +118,7 @@ jobs:
           set -e
 
       - name: Clean
-        run: xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN clean
+        run: xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN -destination "generic/platform=iOS" clean
 
       - name: Archive
         env:
