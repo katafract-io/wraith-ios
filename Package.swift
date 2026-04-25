@@ -20,7 +20,7 @@ let package = Package(
     dependencies: [
         .package(
             url: "https://github.com/WireGuard/wireguard-apple",
-            from: "1.0.15-26"
+            .exact("1.0.15-26")
         ),
     ],
     targets: [
