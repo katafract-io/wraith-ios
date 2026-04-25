@@ -1363,7 +1363,7 @@
 		};
 		KFSTYLE001 /* XCLocalSwiftPackageReference "KatafractStyle" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../KatafractStyle;
+			relativePath = KatafractStyle;
 		};
 /* End XCLocalSwiftPackageReference section */
 
