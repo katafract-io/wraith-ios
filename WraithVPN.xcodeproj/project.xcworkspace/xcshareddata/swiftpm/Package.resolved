@@ -1,0 +1,14 @@
+{
+  "pins" : [
+    {
+      "identity" : "katafractstyle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/katafract-io/KatafractStyle",
+      "state" : {
+        "revision" : "bf08623213c5c979b64847e5cee877952ccc05a9",
+        "version" : "0.1.2"
+      }
+    }
+  ],
+  "version" : 2
+}

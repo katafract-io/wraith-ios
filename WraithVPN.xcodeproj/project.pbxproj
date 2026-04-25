@@ -668,7 +668,7 @@
 			mainGroup = AAGRP000;
 			packageReferences = (
 				BC8F55772F80E2F4009FC332 /* XCLocalSwiftPackageReference "wireguard-apple" */,
-				KFSTYLE001 /* XCLocalSwiftPackageReference "KatafractStyle" */,
+				KFSTYLE001 /* XCRemoteSwiftPackageReference "KatafractStyle" */,
 			);
 			productRefGroup = AAGRP010 /* Products */;
 			projectDirPath = "";
@@ -1357,9 +1357,13 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "wireguard-apple";
 		};
-		KFSTYLE001 /* XCLocalSwiftPackageReference "KatafractStyle" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../KatafractStyle;
+		KFSTYLE001 /* XCRemoteSwiftPackageReference "KatafractStyle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/katafract-io/KatafractStyle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.2;
+			};
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -1376,12 +1380,12 @@
 		};
 		KFSTYLE_IOS_PROD /* KatafractStyle */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = KFSTYLE001 /* XCLocalSwiftPackageReference "KatafractStyle" */;
+			package = KFSTYLE001 /* XCRemoteSwiftPackageReference "KatafractStyle" */;
 			productName = KatafractStyle;
 		};
 		KFSTYLE_MAC_PROD /* KatafractStyle */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = KFSTYLE001 /* XCLocalSwiftPackageReference "KatafractStyle" */;
+			package = KFSTYLE001 /* XCRemoteSwiftPackageReference "KatafractStyle" */;
 			productName = KatafractStyle;
 		};
 /* End XCSwiftPackageProductDependency section */
