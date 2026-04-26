@@ -59,6 +59,7 @@
 		AATST203 /* StoreKitManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AATST103 /* StoreKitManagerTests.swift */; };
 		AATST204 /* ServerListManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AATST104 /* ServerListManagerTests.swift */; };
 		AATST205 /* HavenDNSManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AATST105 /* HavenDNSManagerTests.swift */; };
+		AATST206 /* ShadowsocksConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AATST106 /* ShadowsocksConfigTests.swift */; };
 		AATUNPRIV001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = AATUNPRIV100 /* PrivacyInfo.xcprivacy */; };
 		BBMAC050 /* WraithVPNMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMAC010 /* WraithVPNMacApp.swift */; };
 		BBMAC054 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100009 /* APIClient.swift */; };
@@ -232,6 +233,7 @@
 		AATST103 /* StoreKitManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreKitManagerTests.swift; sourceTree = "<group>"; };
 		AATST104 /* ServerListManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerListManagerTests.swift; sourceTree = "<group>"; };
 		AATST105 /* HavenDNSManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HavenDNSManagerTests.swift; sourceTree = "<group>"; };
+		AATST106 /* ShadowsocksConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShadowsocksConfigTests.swift; sourceTree = "<group>"; };
 		AATST_PROD /* WraithVPNTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WraithVPNTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AATUNPRIV100 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BBMAC010 /* WraithVPNMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WraithVPNMacApp.swift; sourceTree = "<group>"; };
@@ -444,6 +446,7 @@
 				AATST103 /* StoreKitManagerTests.swift */,
 				AATST104 /* ServerListManagerTests.swift */,
 				AATST105 /* HavenDNSManagerTests.swift */,
+				AATST106 /* ShadowsocksConfigTests.swift */,
 			);
 			path = WraithVPNTests;
 			sourceTree = "<group>";
@@ -843,6 +846,7 @@
 				AATST203 /* StoreKitManagerTests.swift in Sources */,
 				AATST204 /* ServerListManagerTests.swift in Sources */,
 				AATST205 /* HavenDNSManagerTests.swift in Sources */,
+				AATST206 /* ShadowsocksConfigTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
