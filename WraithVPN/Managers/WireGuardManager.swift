@@ -702,6 +702,36 @@ final class WireGuardManager: ObservableObject {
         await applyOnDemand(enabled)
     }
 
+    /// Changes the transport mode preference and reconnects if currently connected.
+    /// When switching to .shadowsocks (Stealth), uses the fallback transport.
+    /// When switching to .wireguard, reconnects to re-try plain WG with fallback available.
+    func setTransportMode(_ mode: TransportMode) async {
+        // Persist the preference immediately so the UI reflects it
+        transportPreference = mode
+        UserDefaults.standard.set(mode.rawValue, forKey: "transportPreference")
+
+        // Only reconnect if the tunnel is already up and connected
+        guard case .connected = status, isProvisioned else {
+            // Not connected — preference is saved, will take effect on next connect
+            return
+        }
+
+        DebugLogger.shared.wg("Transport mode change requested: \(mode.rawValue)")
+
+        // If switching to Shadowsocks, attempt the fallback transport immediately
+        if mode == .shadowsocks {
+            await attemptShadowsocksFallback()
+            return
+        }
+
+        // If switching to WireGuard, reconnect by dropping and restarting the tunnel.
+        // This gives WireGuard priority but keeps SS available as fallback if UDP is blocked.
+        DebugLogger.shared.wg("Reconnecting to try WireGuard transport…")
+        manager?.connection.stopVPNTunnel()
+        try? await Task.sleep(for: .milliseconds(1000))
+        try? startTunnel()
+    }
+
     /// Revokes all active peers (single-hop or multi-hop) and removes the local profile.
     func revokePeer() async {
         await revokeAllPeers()
