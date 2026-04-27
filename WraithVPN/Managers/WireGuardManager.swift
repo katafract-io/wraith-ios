@@ -382,6 +382,26 @@ final class WireGuardManager: ObservableObject {
         await applyOnDemand(autoConnectEnabled)
         try? await manager?.loadFromPreferences()
         try startTunnel()
+
+        // Persist Shadowsocks fallback config + exit IP to App Group (mirrors connectToServer)
+        if let ssConfig = provision.shadowsocksFallback,
+           let encoded = try? JSONEncoder().encode(ssConfig) {
+            appGroupDefaults?.set(encoded, forKey: "activeShadowsocksConfig")
+        } else {
+            appGroupDefaults?.removeObject(forKey: "activeShadowsocksConfig")
+        }
+        if let ip = exitIP {
+            appGroupDefaults?.set(ip, forKey: "wgExitIP")
+        }
+
+        // Issue #7/#3: reflect transport preference + flag SS engagement after .connected
+        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
+            self.activeTransport = .wireguard
+            pendingShadowsocksEngagement = false
+        }
+        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
+            pendingShadowsocksEngagement = true
+        }
     }
 
     /// Foreground-triggered Layer 2 probe. Called when the app returns from
@@ -1035,6 +1055,25 @@ final class WireGuardManager: ObservableObject {
             if let ip = exitIP { try KeychainHelper.shared.save(ip, for: .wgExitIP) }
         } catch {
             DebugLogger.shared.peer("CRITICAL: Keychain save failed for peerId=\(provision.peerId) (switch): \(error.localizedDescription)")
+        }
+        // Persist Shadowsocks fallback config + exit IP to App Group (mirrors provisionAndInstall)
+        if let ssConfig = provision.shadowsocksFallback,
+           let encoded = try? JSONEncoder().encode(ssConfig) {
+            appGroupDefaults?.set(encoded, forKey: "activeShadowsocksConfig")
+        } else {
+            appGroupDefaults?.removeObject(forKey: "activeShadowsocksConfig")
+        }
+        if let ip = exitIP {
+            appGroupDefaults?.set(ip, forKey: "wgExitIP")
+        }
+
+        // Issue #7/#3: reflect transport preference + flag SS engagement after .connected
+        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
+            self.activeTransport = .wireguard
+            pendingShadowsocksEngagement = false
+        }
+        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
+            pendingShadowsocksEngagement = true
         }
     }
 
