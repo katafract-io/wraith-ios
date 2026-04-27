@@ -82,6 +82,8 @@ final class WireGuardManager: ObservableObject {
     /// True while any provision/switch is in-flight. Published so the UI can
     /// disable the connect button and show a loading state during provisioning.
     @Published private(set) var isProvisioning = false
+    /// Issue #5: Guards against rapid transport mode toggles queuing concurrent calls
+    private var isTransportSwitching = false
     /// Tracks the manager-load task so `autoProvisionIfNeeded` can await it
     /// before inspecting `isProvisioned`, preventing a race condition that
     /// causes spurious re-provisioning on launch.
@@ -263,6 +265,17 @@ final class WireGuardManager: ObservableObject {
         await applyOnDemand(autoConnectEnabled)
         try? await manager?.loadFromPreferences()
         try startTunnel()
+
+        // Issue #7: Ensure activeTransport reflects the attempt — if not engaging SS,
+        // explicitly set wireguard so stale .shadowsocks values don't persist.
+        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
+            self.activeTransport = .wireguard
+        }
+
+        // Issue #3: Honor transportPreference on fresh connect
+        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
+            await attemptShadowsocksFallback()
+        }
     }
 
     /// Phase F — region-first connect.
@@ -706,6 +719,11 @@ final class WireGuardManager: ObservableObject {
     /// When switching to .shadowsocks (Stealth), uses the fallback transport.
     /// When switching to .wireguard, reconnects to re-try plain WG with fallback available.
     func setTransportMode(_ mode: TransportMode) async {
+        // Issue #5: Guard against rapid toggles queuing concurrent calls
+        guard !isTransportSwitching else { return }
+        isTransportSwitching = true
+        defer { isTransportSwitching = false }
+
         // Persist the preference immediately so the UI reflects it
         transportPreference = mode
         UserDefaults.standard.set(mode.rawValue, forKey: "transportPreference")
@@ -728,8 +746,16 @@ final class WireGuardManager: ObservableObject {
         // This gives WireGuard priority but keeps SS available as fallback if UDP is blocked.
         DebugLogger.shared.wg("Reconnecting to try WireGuard transport…")
         manager?.connection.stopVPNTunnel()
-        try? await Task.sleep(for: .milliseconds(1000))
+        // Issue #2: Poll until disconnected instead of fixed sleep (NE teardown is load-dependent)
+        for _ in 0..<20 {
+            try? await Task.sleep(for: .milliseconds(100))
+            let s = manager?.connection.status
+            if s == .disconnected || s == .invalid { break }
+        }
         try? startTunnel()
+
+        // Issue #7: Reset activeTransport to wireguard after successful reconnect
+        self.activeTransport = .wireguard
     }
 
     /// Revokes all active peers (single-hop or multi-hop) and removes the local profile.
@@ -849,6 +875,10 @@ final class WireGuardManager: ObservableObject {
     private func attemptShadowsocksFallback() async {
         guard let session = tunnelProviderSession else {
             DebugLogger.shared.wg("SS fallback: no tunnel session available")
+            // Issue #8: Surface IPC failure to user
+            status = .failed("Stealth unavailable — using direct WireGuard")
+            transportPreference = .wireguard
+            activeTransport = .wireguard
             return
         }
         // Message byte 1 = "switch to SS fallback"
@@ -865,9 +895,17 @@ final class WireGuardManager: ObservableObject {
                 status = .connected  // optimistic; will re-health-check on next cycle
             } else {
                 DebugLogger.shared.wg("SS fallback: extension returned unexpected reply")
+                // Issue #8: Surface unexpected reply to user
+                status = .failed("Stealth unavailable — using direct WireGuard")
+                transportPreference = .wireguard
+                activeTransport = .wireguard
             }
         } catch {
             DebugLogger.shared.wg("SS fallback: sendProviderMessage error — \(error.localizedDescription)")
+            // Issue #8: Surface IPC error to user
+            status = .failed("Stealth unavailable — using direct WireGuard")
+            transportPreference = .wireguard
+            activeTransport = .wireguard
         }
     }
 
