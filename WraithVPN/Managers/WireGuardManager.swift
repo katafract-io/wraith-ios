@@ -827,6 +827,14 @@ final class WireGuardManager: ObservableObject {
             if let server = connectedServer, let session = tunnelProviderSession {
                 TelemetryManager.shared.sessionStarted(nodeId: server.nodeId, connection: session)
             }
+
+            // Issue #3 fix: Gate SS engagement on confirmed healthy WG (handshake succeeded)
+            // instead of on bare .connected transition. Engage only once per connect cycle.
+            if pendingShadowsocksEngagement {
+                pendingShadowsocksEngagement = false
+                DebugLogger.shared.wg("Engaging Shadowsocks fallback after WG health confirmed")
+                Task { await self.attemptShadowsocksFallback() }
+            }
             return
         }
 
@@ -899,22 +907,25 @@ final class WireGuardManager: ObservableObject {
     /// Instructs the WireGuardTunnel extension to switch to Shadowsocks transport.
     /// The extension reads `activeShadowsocksConfig` from App Group UserDefaults and
     /// starts ShadowsocksTransport inline. Called when WG health check fails and a
-    /// provisioned SS config is available.
+    /// provisioned SS config is available. If SS engagement fails, restarts WireGuard
+    /// to ensure the user retains connectivity.
     private func attemptShadowsocksFallback() async {
         guard let session = tunnelProviderSession else {
             DebugLogger.shared.wg("SS fallback: no tunnel session available")
-            // Issue #8: Surface IPC failure to user
-            status = .failed("Stealth unavailable — using direct WireGuard")
-            transportPreference = .wireguard
-            activeTransport = .wireguard
+            // Restart WG since SS engagement failed
+            await restartWireGuardAfterSSFailure()
             return
         }
         // Message byte 1 = "switch to SS fallback"
         let message = Data([0x01])
         do {
             let reply = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
-                try? session.sendProviderMessage(message) { data in
-                    continuation.resume(returning: data)
+                do {
+                    try session.sendProviderMessage(message) { data in
+                        continuation.resume(returning: data)
+                    }
+                } catch {
+                    continuation.resume(throwing: error)
                 }
             }
             if let reply, reply.first == 0x01 {
@@ -923,17 +934,52 @@ final class WireGuardManager: ObservableObject {
                 status = .connected  // optimistic; will re-health-check on next cycle
             } else {
                 DebugLogger.shared.wg("SS fallback: extension returned unexpected reply")
-                // Issue #8: Surface unexpected reply to user
-                status = .failed("Stealth unavailable — using direct WireGuard")
-                transportPreference = .wireguard
-                activeTransport = .wireguard
+                // Restart WG since SS engagement failed
+                await restartWireGuardAfterSSFailure()
             }
         } catch {
             DebugLogger.shared.wg("SS fallback: sendProviderMessage error — \(error.localizedDescription)")
-            // Issue #8: Surface IPC error to user
-            status = .failed("Stealth unavailable — using direct WireGuard")
-            transportPreference = .wireguard
-            activeTransport = .wireguard
+            // Restart WG since SS engagement failed
+            await restartWireGuardAfterSSFailure()
+        }
+    }
+
+    /// Recovery helper: restarts the WireGuard adapter when Shadowsocks fallback fails.
+    /// Sends IPC message 0x02 to the extension to restart WG adapter, ensuring the user
+    /// retains connectivity even when Stealth mode cannot engage.
+    private func restartWireGuardAfterSSFailure() async {
+        DebugLogger.shared.wg("SS fallback failed — restarting WireGuard adapter")
+        transportPreference = .wireguard
+        activeTransport = .wireguard
+
+        guard let session = tunnelProviderSession else {
+            DebugLogger.shared.wg("Cannot restart WG: no tunnel session available")
+            status = .failed("Stealth mode unavailable. Direct WireGuard restart failed.")
+            return
+        }
+
+        // Message byte 2 = "restart WireGuard adapter"
+        let message = Data([0x02])
+        do {
+            let reply = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
+                do {
+                    try session.sendProviderMessage(message) { data in
+                        continuation.resume(returning: data)
+                    }
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+            if let reply, reply.first == 0x01 {
+                DebugLogger.shared.wg("WG restart: extension confirmed adapter restart")
+                status = .connected
+            } else {
+                DebugLogger.shared.wg("WG restart: unexpected reply from extension")
+                status = .failed("Stealth mode unavailable. WireGuard restart failed.")
+            }
+        } catch {
+            DebugLogger.shared.wg("WG restart: IPC error — \(error.localizedDescription)")
+            status = .failed("Stealth mode unavailable. WireGuard restart failed.")
         }
     }
 
@@ -1328,13 +1374,7 @@ final class WireGuardManager: ObservableObject {
             // Do NOT reset reprovisionAttempts here — .connected just means the NE
             // extension started, NOT that the WG handshake succeeded. The health check
             // resets the counter when it confirms the tunnel is actually routing traffic.
-
-            // Issue #3 fix: If we set transportPreference to .shadowsocks before connect,
-            // engage the SS fallback now that the tunnel has reached .connected.
-            if pendingShadowsocksEngagement {
-                pendingShadowsocksEngagement = false
-                Task { await self.attemptShadowsocksFallback() }
-            }
+            // SS engagement is now gated on healthy WG (see postConnectHealthCheck).
         case .reasserting:
             status = .connecting
         case .disconnecting:
