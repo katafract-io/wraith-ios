@@ -604,6 +604,17 @@ final class WireGuardManager: ObservableObject {
 
         await applyOnDemand(autoConnectEnabled)
         try? await manager?.loadFromPreferences()
+
+        // Honor transportPreference: set flag so postConnectHealthCheck fires SS engagement
+        // once WG handshake confirms healthy (matches connectToServer/connectToRegion pattern)
+        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
+            self.activeTransport = .wireguard
+            pendingShadowsocksEngagement = false
+        }
+        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
+            pendingShadowsocksEngagement = true
+        }
+
         try startTunnel()
     }
 
@@ -662,6 +673,17 @@ final class WireGuardManager: ObservableObject {
         await applyOnDemand(autoConnectEnabled)
         // One extra load after the save so the connection object is fresh.
         try? await manager?.loadFromPreferences()
+
+        // Honor transportPreference: set flag so postConnectHealthCheck fires SS engagement
+        // once WG handshake confirms healthy (matches connectToServer/connectToRegion pattern)
+        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
+            self.activeTransport = .wireguard
+            pendingShadowsocksEngagement = false
+        }
+        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
+            pendingShadowsocksEngagement = true
+        }
+
         do {
             try startTunnel()
         } catch let err as NEVPNError where err.code == .configurationInvalid {
@@ -678,6 +700,17 @@ final class WireGuardManager: ObservableObject {
             try await provisionAndInstall(server: nearest)
             await applyOnDemand(autoConnectEnabled)
             try? await manager?.loadFromPreferences()
+
+            // Honor transportPreference: set flag so postConnectHealthCheck fires SS engagement
+            // once WG handshake confirms healthy (same pattern as primary connect path)
+            if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
+                self.activeTransport = .wireguard
+                pendingShadowsocksEngagement = false
+            }
+            if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
+                pendingShadowsocksEngagement = true
+            }
+
             try startTunnel()
         }
     }
