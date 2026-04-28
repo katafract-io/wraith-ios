@@ -102,6 +102,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(Data([success ? 0x01 : 0x00]))
             }
 
+        } else if messageData.count == 1, messageData[0] == 0x02 {
+            // Message 0x02: restart WireGuard adapter (after failed SS attempt)
+            Task {
+                let success = await self.restartWireGuardAdapter()
+                completionHandler(Data([success ? 0x01 : 0x00]))
+            }
+
         } else {
             completionHandler(nil)
         }
@@ -145,6 +152,43 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         } catch {
             log.error("SS fallback: transport start failed — \(error.localizedDescription, privacy: .public)")
             return false
+        }
+    }
+
+    /// Restarts the WireGuard adapter after a failed Shadowsocks fallback attempt.
+    /// Called via IPC message 0x02 from the main app when SS engagement fails.
+    /// This ensures the user retains connectivity via direct WireGuard.
+    private func restartWireGuardAdapter() async -> Bool {
+        log.info("Restarting WireGuard adapter (SS fallback failed)")
+        // Stop any active Shadowsocks transport first
+        if let transport = shadowsocksTransport {
+            await transport.stop()
+            shadowsocksTransport = nil
+        }
+        // Restart WireGuard using the same configuration as startTunnel
+        guard let proto = protocolConfiguration as? NETunnelProviderProtocol,
+              let providerConfig = proto.providerConfiguration,
+              let wgConfig = providerConfig["wgConfig"] as? String else {
+            log.error("restartWireGuardAdapter: missing wgConfig")
+            return false
+        }
+        let tunnelConfiguration: TunnelConfiguration
+        do {
+            tunnelConfiguration = try TunnelConfiguration.makeWraithConfiguration(from: wgConfig, name: "wraith")
+        } catch {
+            log.error("restartWireGuardAdapter: config parse failed — \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+        return await withCheckedContinuation { continuation in
+            adapter.start(tunnelConfiguration: tunnelConfiguration) { adapterError in
+                if let adapterError {
+                    self.log.error("restartWireGuardAdapter: start failed — \(adapterError, privacy: .public)")
+                    continuation.resume(returning: false)
+                } else {
+                    self.log.info("WireGuard adapter restarted successfully")
+                    continuation.resume(returning: true)
+                }
+            }
         }
     }
 }
