@@ -9,34 +9,81 @@ import XCTest
 
 final class ModelTests: XCTestCase {
 
-    // MARK: - RegionInfo
+    // MARK: - RegionInfo (region-only fallback path)
 
-    func testCityName_knownRegions() {
-        XCTAssertEqual(RegionInfo.cityName(for: "eu-west"),      "Frankfurt")
-        XCTAssertEqual(RegionInfo.cityName(for: "eu-north"),     "Helsinki")
-        XCTAssertEqual(RegionInfo.cityName(for: "ap-southeast"), "Singapore")
-        XCTAssertEqual(RegionInfo.cityName(for: "us-central"),   "Missouri")
-        XCTAssertEqual(RegionInfo.cityName(for: "us-east"),      "Virginia")
-        XCTAssertEqual(RegionInfo.cityName(for: "us-west"),      "Oregon")
+    func testCityName_regionFallback_knownRegions() {
+        // site is unknown to siteMap → falls back to regionMap.
+        XCTAssertEqual(RegionInfo.cityName(site: "",    region: "eu-west"),      "Frankfurt")
+        XCTAssertEqual(RegionInfo.cityName(site: "",    region: "eu-north"),     "Helsinki")
+        XCTAssertEqual(RegionInfo.cityName(site: "",    region: "ap-southeast"), "Singapore")
+        XCTAssertEqual(RegionInfo.cityName(site: "",    region: "us-central"),   "Missouri")
+        XCTAssertEqual(RegionInfo.cityName(site: "",    region: "us-east"),      "Virginia")
+        XCTAssertEqual(RegionInfo.cityName(site: "",    region: "us-west"),      "Oregon")
     }
 
-    func testCityName_unknownRegion_returnsRegionCode() {
-        XCTAssertEqual(RegionInfo.cityName(for: "xx-unknown"), "xx-unknown")
-        XCTAssertEqual(RegionInfo.cityName(for: ""),           "")
+    func testCityName_unknownSiteAndRegion_returnsRegionCode() {
+        XCTAssertEqual(RegionInfo.cityName(site: "xx", region: "xx-unknown"), "xx-unknown")
+        XCTAssertEqual(RegionInfo.cityName(site: "",   region: ""),           "")
     }
 
-    func testFlag_knownRegions() {
-        XCTAssertEqual(RegionInfo.flag(for: "eu-west"),      "🇩🇪")
-        XCTAssertEqual(RegionInfo.flag(for: "eu-north"),     "🇫🇮")
-        XCTAssertEqual(RegionInfo.flag(for: "ap-southeast"), "🇸🇬")
-        XCTAssertEqual(RegionInfo.flag(for: "us-central"),   "🇺🇸")
-        XCTAssertEqual(RegionInfo.flag(for: "us-east"),      "🇺🇸")
-        XCTAssertEqual(RegionInfo.flag(for: "us-west"),      "🇺🇸")
+    func testFlag_regionFallback_knownRegions() {
+        XCTAssertEqual(RegionInfo.flag(site: "", region: "eu-west"),      "🇩🇪")
+        XCTAssertEqual(RegionInfo.flag(site: "", region: "eu-north"),     "🇫🇮")
+        XCTAssertEqual(RegionInfo.flag(site: "", region: "ap-southeast"), "🇸🇬")
+        XCTAssertEqual(RegionInfo.flag(site: "", region: "us-central"),   "🇺🇸")
+        XCTAssertEqual(RegionInfo.flag(site: "", region: "us-east"),      "🇺🇸")
+        XCTAssertEqual(RegionInfo.flag(site: "", region: "us-west"),      "🇺🇸")
     }
 
-    func testFlag_unknownRegion_returnsGlobe() {
-        XCTAssertEqual(RegionInfo.flag(for: "xx-unknown"), "🌐")
-        XCTAssertEqual(RegionInfo.flag(for: ""),           "🌐")
+    func testFlag_unknownSiteAndRegion_returnsGlobe() {
+        XCTAssertEqual(RegionInfo.flag(site: "xx", region: "xx-unknown"), "🌐")
+        XCTAssertEqual(RegionInfo.flag(site: "",   region: ""),           "🌐")
+    }
+
+    // MARK: - RegionInfo (site-keyed map — preferred resolution)
+    //
+    // Bug B regression test: nodeId vpn-iad-01 (artemis-api site=ash) MUST render
+    // as Ashburn, NOT Newark. Newark is vpn-ewr-01 (site=ewr1). The TestFlight
+    // 1456 bug was that picker showed "Newark" while tunnel ran on vpn-iad-01;
+    // the iOS site map was correct, the bug was that connectedServer reflected
+    // the user's requested node not the actual provisioned node (fixed in
+    // WireGuardManager.resolveProvisionedServer).
+
+    func testCityName_siteMap_iad_isAshburn_not_newark() {
+        // site=ash is what artemis-api returns for vpn-iad-01 (Hetzner ASH).
+        XCTAssertEqual(RegionInfo.cityName(site: "ash", region: "us-east"), "Ashburn")
+        XCTAssertNotEqual(RegionInfo.cityName(site: "ash", region: "us-east"), "Newark",
+                          "vpn-iad-01 (site=ash) must NEVER render as Newark — that is vpn-ewr-01")
+    }
+
+    func testCityName_siteMap_ewr_isNewark() {
+        XCTAssertEqual(RegionInfo.cityName(site: "ewr1", region: "us-east"), "Newark")
+    }
+
+    func testCityName_siteMap_allKnownNodes() {
+        // Every production node id → expected city, locking in the truth contract.
+        let cases: [(site: String, region: String, expected: String)] = [
+            ("ash",  "us-east",      "Ashburn"),     // vpn-iad-01
+            ("ewr1", "us-east",      "Newark"),      // vpn-ewr-01
+            ("hil",  "us-west",      "Hillsboro"),   // vpn-pdx-01 + vpn-pdx-02
+            ("nbg1", "eu-west",      "Nuremberg"),   // vpn-nbg-01
+            ("hel1", "eu-north",     "Helsinki"),    // vpn-hel-01
+            ("sgp2", "ap-southeast", "Singapore"),   // vpn-sin-02
+            ("sgp3", "ap-southeast", "Singapore"),   // vpn-sin-03
+            ("nrt1", "ap-northeast", "Tokyo"),       // vpn-nrt-01
+            ("bom1", "ap-south",     "Mumbai"),      // vpn-bom-01
+        ]
+        for c in cases {
+            XCTAssertEqual(
+                RegionInfo.cityName(site: c.site, region: c.region),
+                c.expected,
+                "site=\(c.site) region=\(c.region) should render as \(c.expected)"
+            )
+        }
+    }
+
+    func testFlag_siteMap_iad_isUS() {
+        XCTAssertEqual(RegionInfo.flag(site: "ash", region: "us-east"), "🇺🇸")
     }
 
     // MARK: - VPNServer computed props
@@ -49,6 +96,28 @@ final class ModelTests: XCTestCase {
     func testServer_flagEmoji_delegatesToRegionInfo() {
         let server = makeServer(region: "ap-southeast")
         XCTAssertEqual(server.flagEmoji, "🇸🇬")
+    }
+
+    func testServer_cityName_iad_node_rendersAshburn() {
+        // Direct check against the Bug B failure mode: a VPNServer with the
+        // canonical metadata for vpn-iad-01 must produce "Ashburn" and never
+        // "Newark", regardless of region.
+        let iad = VPNServer(
+            nodeId: "vpn-iad-01",
+            site: "ash",
+            region: "us-east",
+            displayName: "Ashburn",
+            ipv4: "87.99.128.159",
+            ipv6: nil,
+            endpoints: VPNServer.Endpoints(primary: "87.99.128.159:51820", secondary: nil),
+            publicKey: "",
+            wgPort: 51820,
+            loadScore: 0,
+            ipv6Available: false,
+            geodnsWeight: 100
+        )
+        XCTAssertEqual(iad.cityName, "Ashburn")
+        XCTAssertNotEqual(iad.cityName, "Newark")
     }
 
     // MARK: - VPNStatus
