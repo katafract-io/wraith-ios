@@ -882,8 +882,13 @@ final class WireGuardManager: ObservableObject {
             // instead of on bare .connected transition. Engage only once per connect cycle.
             if pendingShadowsocksEngagement {
                 pendingShadowsocksEngagement = false
-                DebugLogger.shared.wg("Engaging Shadowsocks fallback after WG health confirmed")
+                DebugLogger.shared.wg("postConnectHealthCheck: WG healthy + pendingShadowsocksEngagement=true → firing attemptShadowsocksFallback()")
                 Task { await self.attemptShadowsocksFallback() }
+            } else if transportPreference == .shadowsocks {
+                // Stealth requested but no engagement queued. This shouldn't happen if
+                // connect paths set the flag correctly — log it loudly so we catch any
+                // future regression like PR #47's missing entry points.
+                DebugLogger.shared.wg("postConnectHealthCheck: WARNING — transportPreference=.shadowsocks but pendingShadowsocksEngagement=false. Stealth will NOT engage. Likely a connect-path regression.")
             }
             return
         }
@@ -956,16 +961,37 @@ final class WireGuardManager: ObservableObject {
 
     /// Instructs the WireGuardTunnel extension to switch to Shadowsocks transport.
     /// The extension reads `activeShadowsocksConfig` from App Group UserDefaults and
-    /// starts ShadowsocksTransport inline. Called when WG health check fails and a
-    /// provisioned SS config is available. If SS engagement fails, restarts WireGuard
-    /// to ensure the user retains connectivity.
+    /// starts ShadowsocksTransport inline. Called when WG health check fails OR when
+    /// the user has `transportPreference == .shadowsocks` (Stealth requested).
+    ///
+    /// Bug C instrumentation: every gate is logged so the next failed engagement
+    /// leaves a forensic trail (TestFlight build 1456 saw zero SS connections
+    /// server-side despite badge claiming Stealth — see
+    /// `project_wraith_ios_ui_truth_bugs_2026_04_29.md`).
     private func attemptShadowsocksFallback() async {
-        guard let session = tunnelProviderSession else {
-            DebugLogger.shared.wg("SS fallback: no tunnel session available")
-            // Restart WG since SS engagement failed
-            await restartWireGuardAfterSSFailure()
+        DebugLogger.shared.wg("attemptShadowsocksFallback ENTRY: transportPreference=\(transportPreference.rawValue) activeTransport=\(activeTransport.rawValue) status=\(status.label)")
+
+        // Pre-flight: SS config must be in App Group for the extension to read.
+        let configBlobLen = appGroupDefaults?.data(forKey: "activeShadowsocksConfig")?.count ?? 0
+        guard configBlobLen > 0 else {
+            DebugLogger.shared.wg("SS fallback BAIL: activeShadowsocksConfig MISSING from App Group (provision response did not include shadowsocks_fallback?)")
+            // Surface to user — Stealth was requested but cannot engage.
+            // Per feedback_user_intent_sacred.md: PRESERVE transportPreference (intent)
+            // but reflect reality. activeTransport stays .wireguard.
+            status = .failed("Stealth unreachable: server did not provision SS fallback. Tunnel still on WireGuard.")
             return
         }
+        DebugLogger.shared.wg("SS fallback: activeShadowsocksConfig present (\(configBlobLen) bytes)")
+
+        guard let session = tunnelProviderSession else {
+            DebugLogger.shared.wg("SS fallback BAIL: tunnelProviderSession is nil — NE manager not loaded or tunnel not running")
+            // Don't touch user's preference; surface failure clearly.
+            status = .failed("Stealth unreachable: tunnel session not available.")
+            await restartWireGuardAfterSSFailure(reason: "no tunnel session")
+            return
+        }
+        DebugLogger.shared.wg("SS fallback: sending IPC 0x01 (switch to SS) to tunnel extension…")
+
         // Message byte 1 = "switch to SS fallback"
         let message = Data([0x01])
         do {
@@ -978,27 +1004,35 @@ final class WireGuardManager: ObservableObject {
                     continuation.resume(throwing: error)
                 }
             }
+            let replyByte = reply?.first.map { String(format: "0x%02x", $0) } ?? "nil"
+            DebugLogger.shared.wg("SS fallback: extension reply=\(replyByte) bytes=\(reply?.count ?? 0)")
             if let reply, reply.first == 0x01 {
-                DebugLogger.shared.wg("SS fallback: extension confirmed transport switch")
+                DebugLogger.shared.wg("SS fallback: extension confirmed transport switch — activeTransport=.shadowsocks")
                 activeTransport = .shadowsocks
                 status = .connected  // optimistic; will re-health-check on next cycle
             } else {
-                DebugLogger.shared.wg("SS fallback: extension returned unexpected reply")
-                // Restart WG since SS engagement failed
-                await restartWireGuardAfterSSFailure()
+                DebugLogger.shared.wg("SS fallback: extension returned non-success reply (likely transport.start failed inside extension — check unified log com.katafract.wraith.tunnel for the underlying error)")
+                // Surface to the user that Stealth didn't engage.
+                status = .failed("Stealth unreachable: tunnel extension could not start SS transport. On WireGuard.")
+                await restartWireGuardAfterSSFailure(reason: "extension reply != 0x01")
             }
         } catch {
-            DebugLogger.shared.wg("SS fallback: sendProviderMessage error — \(error.localizedDescription)")
-            // Restart WG since SS engagement failed
-            await restartWireGuardAfterSSFailure()
+            DebugLogger.shared.wg("SS fallback: sendProviderMessage threw — \(error.localizedDescription)")
+            status = .failed("Stealth unreachable: IPC error — \(error.localizedDescription)")
+            await restartWireGuardAfterSSFailure(reason: "IPC threw: \(error.localizedDescription)")
         }
     }
 
     /// Recovery helper: restarts the WireGuard adapter when Shadowsocks fallback fails.
     /// Sends IPC message 0x02 to the extension to restart WG adapter, ensuring the user
     /// retains connectivity even when Stealth mode cannot engage.
-    private func restartWireGuardAfterSSFailure() async {
-        DebugLogger.shared.wg("SS fallback failed — restarting WireGuard adapter; preference kept as Stealth, will retry on next reconnect")
+    ///
+    /// Bug C: this DOES NOT clear `transportPreference`. Per
+    /// `feedback_user_intent_sacred.md`, intent is sacred — failures update reality
+    /// (`activeTransport`, `status`) but leave the user's picker choice alone, so
+    /// the next reconnect retries Stealth and the badge shows the warning state.
+    private func restartWireGuardAfterSSFailure(reason: String = "unknown") async {
+        DebugLogger.shared.wg("SS engagement failed (reason=\(reason)) — restarting WG adapter; transportPreference=\(transportPreference.rawValue) (preserved per user-intent doctrine)")
         activeTransport = .wireguard
 
         guard let session = tunnelProviderSession else {
@@ -1021,6 +1055,10 @@ final class WireGuardManager: ObservableObject {
             }
             if let reply, reply.first == 0x01 {
                 DebugLogger.shared.wg("WG restart: extension confirmed adapter restart")
+                // Status was set to .failed by the caller with a Stealth-specific
+                // message. The badge state (transportPreference != activeTransport)
+                // already conveys the gap; promoting back to .connected lets the
+                // tunnel be marked usable while the warning badge stays visible.
                 status = .connected
             } else {
                 DebugLogger.shared.wg("WG restart: unexpected reply from extension")
@@ -1089,17 +1127,23 @@ final class WireGuardManager: ObservableObject {
         // The server only knows our public key, so the returned config has no private key.
         // Inject it from Keychain before handing the config to the tunnel extension.
         let config = try injectPrivateKey(into: provision.config)
-        try await installProfile(configText: config, server: server)
+        // Bug B fix: artemis-api's _select_node may return a different node than
+        // requested (load balancing, requested node unhealthy, etc.). Use the
+        // server's canonical metadata for the actual provisioned nodeId so
+        // cityName / flagEmoji / region all reflect REALITY, not user intent.
+        let actualServer = await resolveProvisionedServer(provisionNodeId: provision.nodeId,
+                                                          requested: server)
+        try await installProfile(configText: config, server: actualServer)
         activePeerId    = provision.peerId
         assignedIP      = provision.assignedIpv4
-        exitIP          = provision.exitIpv4 ?? (server.ipv4.isEmpty ? nil : server.ipv4)
-        connectedServer = server
+        exitIP          = provision.exitIpv4 ?? (actualServer.ipv4.isEmpty ? nil : actualServer.ipv4)
+        connectedServer = actualServer
         isProvisioned   = true
         NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
         do {
             try KeychainHelper.shared.save(provision.peerId, for: .activePeerId)
             try KeychainHelper.shared.save(provision.nodeId, for: .activeNodeId)
-            try KeychainHelper.shared.save(server.region,    for: .activeRegion)
+            try KeychainHelper.shared.save(actualServer.region, for: .activeRegion)
             if !provision.assignedIpv4.isEmpty {
                 try KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
             }
@@ -1118,7 +1162,10 @@ final class WireGuardManager: ObservableObject {
         if let ip = exitIP {
             appGroupDefaults?.set(ip, forKey: "wgExitIP")
         }
-        DebugLogger.shared.peer("Provisioned: peerId=\(provision.peerId) ip=\(provision.assignedIpv4) node=\(provision.nodeId) exit=\(exitIP ?? "nil")")
+        if server.nodeId != provision.nodeId {
+            DebugLogger.shared.peer("Provision substitution: requested=\(server.nodeId) but server picked \(provision.nodeId) — UI will reflect actual node")
+        }
+        DebugLogger.shared.peer("Provisioned: peerId=\(provision.peerId) ip=\(provision.assignedIpv4) node=\(provision.nodeId) (city=\(actualServer.cityName)) exit=\(exitIP ?? "nil")")
     }
 
     /// Switches an existing peer to a new server node atomically (no extra slot consumed).
@@ -1133,17 +1180,24 @@ final class WireGuardManager: ObservableObject {
             label:      label
         )
         let config = try injectPrivateKey(into: provision.config)
-        try await installProfile(configText: config, server: server)
+        // Bug B fix: see provisionAndInstall — server may substitute a different
+        // healthy node within the requested region. Resolve to canonical metadata.
+        let actualServer = await resolveProvisionedServer(provisionNodeId: provision.nodeId,
+                                                          requested: server)
+        try await installProfile(configText: config, server: actualServer)
         activePeerId    = provision.peerId
         assignedIP      = provision.assignedIpv4
-        exitIP          = provision.exitIpv4 ?? (server.ipv4.isEmpty ? nil : server.ipv4)
-        connectedServer = server
+        exitIP          = provision.exitIpv4 ?? (actualServer.ipv4.isEmpty ? nil : actualServer.ipv4)
+        connectedServer = actualServer
         isProvisioned   = true
         NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
+        if server.nodeId != provision.nodeId {
+            DebugLogger.shared.peer("Switch substitution: requested=\(server.nodeId) but server picked \(provision.nodeId) — UI will reflect actual node")
+        }
         do {
             try KeychainHelper.shared.save(provision.peerId, for: .activePeerId)
             try KeychainHelper.shared.save(provision.nodeId, for: .activeNodeId)
-            try KeychainHelper.shared.save(server.region,    for: .activeRegion)
+            try KeychainHelper.shared.save(actualServer.region, for: .activeRegion)
             if !provision.assignedIpv4.isEmpty {
                 try KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
             }
@@ -1170,6 +1224,35 @@ final class WireGuardManager: ObservableObject {
         if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
             pendingShadowsocksEngagement = true
         }
+    }
+
+    /// Resolves a provisioned `node_id` to the canonical `VPNServer` metadata.
+    ///
+    /// artemis-api's `_select_node` may substitute a different node within the
+    /// same region (the originally-requested node was unhealthy, the load
+    /// balancer chose better, etc.). When that happens, the user-provided
+    /// `requested` server has the WRONG `site` / `region` / `displayName`,
+    /// which propagates into the UI as a city label that doesn't match the
+    /// tunnel's actual exit. This resolver fixes that by:
+    ///   1. If the response nodeId matches the request → return `requested`.
+    ///   2. Otherwise fetch the server list and pick the canonical entry.
+    ///   3. If the fetch fails or the node isn't in the list → return a stub
+    ///      with the response nodeId so the keychain/UI at least carries the
+    ///      truth (the stub renders as the regionMap fallback rather than a
+    ///      lie).
+    private func resolveProvisionedServer(provisionNodeId: String,
+                                          requested: VPNServer) async -> VPNServer {
+        if requested.nodeId == provisionNodeId {
+            return requested
+        }
+        if let servers = try? await APIClient.shared.fetchServers(),
+           let match = servers.first(where: { $0.nodeId == provisionNodeId }) {
+            return match
+        }
+        // Last resort: stub with the response's nodeId. Region is unknown here,
+        // so leave it as the requested region — picking the wrong region label
+        // is less wrong than picking the wrong city.
+        return VPNServer.stub(nodeId: provisionNodeId, region: requested.region)
     }
 
     /// Replaces an empty/missing PrivateKey line in a wg-quick config with the
