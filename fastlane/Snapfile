@@ -25,3 +25,4 @@ launch_arguments([
 
 skip_open_summary(true)
 concurrent_simulators(true)
+skip_helper_version_check(true)
