@@ -38,6 +38,7 @@ struct DebugLogView: View {
                         filterButton(.dns, label: "DNS")
                         filterButton(.peer, label: "PEER")
                         filterButton(.app, label: "APP")
+                        filterButton(.conformance, label: "Conformance")
                     }
                     .padding(.horizontal)
                     .padding(.vertical, 8)
@@ -90,6 +91,11 @@ struct DebugLogView: View {
                         .font(.caption.weight(.medium))
                     }
                     .disabled(isRunningHealthCheck)
+
+                    NavigationLink(destination: DebugConformanceView()) {
+                        Label("Conformance", systemImage: "checkmark.seal")
+                            .font(.caption.weight(.medium))
+                    }
 
                     Spacer()
 
@@ -205,6 +211,7 @@ struct DebugLogView: View {
         case .peer:    return .cyan
         case .app:     return .gray
         case .stealth: return .pink
+        case .conformance: return .orange
         }
     }
 

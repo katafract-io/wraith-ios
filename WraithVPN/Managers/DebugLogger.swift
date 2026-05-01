@@ -27,6 +27,8 @@ enum DebugLogCategory: String {
     case app     = "APP"
     /// Shadowsocks fallback path. Tek's primary debugging filter.
     case stealth = "Stealth"
+    /// Conformance runner cells.
+    case conformance = "Conformance"
 
     /// Subsystem string used by both `DebugLogger` (in-process) and
     /// `SharedDebugLogStore` (cross-process). Matches what the tunnel
@@ -149,6 +151,8 @@ final class DebugLogger: ObservableObject {
     func app(_ message: String)     { log(.app, message) }
     /// Tag for the Shadowsocks fallback flow. Tek filters on this.
     func stealth(_ message: String) { log(.stealth, message) }
+    /// Tag for debug conformance runner cells.
+    func conformance(_ message: String) { log(.conformance, message) }
 
     // MARK: - Cross-process merge
 
