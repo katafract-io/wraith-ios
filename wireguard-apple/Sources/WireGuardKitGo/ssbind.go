@@ -18,6 +18,13 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/conn"
 )
 
+// Compile-time assertion: ssBind must satisfy conn.Bind in full. If
+// amneziawg-go adds a new method to the interface, this line produces a
+// clear "does not implement" error at build time rather than a cryptic
+// linker or runtime failure — the exact class of bug that caused run
+// 25203918678 (missing GetOffloadInfo).
+var _ conn.Bind = (*ssBind)(nil)
+
 // ssBind wraps a conn.Bind. In Phase A all methods delegate; in Phase B the
 // Send/Receive paths add SS framing.
 type ssBind struct {
