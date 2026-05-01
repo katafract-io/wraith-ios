@@ -88,6 +88,31 @@ jobs:
           security set-keychain-settings -lut 7200 "$KEYCHAIN"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCHAIN" >/dev/null 2>&1
 
+      - name: Build WireGuardKitGo (libwg-go.a from Go sources)
+        run: |
+          set -eo pipefail
+          # WireGuardKitGo's prebuilt libwg-go.a in out/ is checked into git but
+          # only refreshed when someone manually runs `make` on a Mac. That's
+          # fragile — anyone touching api-apple.go / ssbind.go would otherwise
+          # ship a stale .a. Build it from source on every CI run.
+          if ! command -v go >/dev/null 2>&1; then
+            echo "::notice::go not found, installing via brew"
+            brew install go
+          fi
+          go version
+          cd wireguard-apple/Sources/WireGuardKitGo
+          # iOS device target (arm64 only — App Store builds don't ship x86_64).
+          # PLATFORM_NAME=iphoneos selects the iOS SDK; ARCHS=arm64 skips the
+          # simulator slice that the App Store doesn't accept anyway.
+          make ARCHS=arm64 PLATFORM_NAME=iphoneos build
+          ls -la out/libwg-go.a
+          # Sanity check: verify the new symbol is present.
+          if ! nm out/libwg-go.a 2>/dev/null | grep -q wgTurnOnStealthPassthrough; then
+            echo "::error::wgTurnOnStealthPassthrough symbol missing from rebuilt libwg-go.a"
+            exit 1
+          fi
+          echo "::notice::libwg-go.a rebuilt from source; Stealth Bind symbols present"
+
       - name: Resolve SPM
         run: xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN -resolvePackageDependencies 2>&1 | tail -5
 
