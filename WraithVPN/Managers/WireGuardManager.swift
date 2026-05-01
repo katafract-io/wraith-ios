@@ -993,8 +993,20 @@ final class WireGuardManager: ObservableObject {
     /// leaves a forensic trail (TestFlight build 1456 saw zero SS connections
     /// server-side despite badge claiming Stealth — see
     /// `project_wraith_ios_ui_truth_bugs_2026_04_29.md`).
+    /// Compile-time kill-switch: while the SS-2022+v2ray-plugin Stealth path
+    /// has a broken data plane (see project_wraith_stealth_dataplane_broken_2026_05_01.md),
+    /// short-circuit SS engagement so the user keeps a working WG tunnel.
+    /// Flip to `false` once the Hysteria 2 transport replaces this path.
+    private static let stealthSSKillSwitchUntilHysteria: Bool = true
+
     private func attemptShadowsocksFallback() async {
         DebugLogger.shared.stealth("attemptShadowsocksFallback ENTRY: pendingFlag=\(pendingShadowsocksEngagement) transportPref=\(transportPreference.rawValue) activeTransport=\(activeTransport.rawValue) status=\(status.label)")
+
+        if Self.stealthSSKillSwitchUntilHysteria {
+            DebugLogger.shared.stealth("ABORT (cause=ss-kill-switch): Stealth (SS-2022) data plane is broken — disabled until Hysteria 2 ships. Staying on WireGuard.")
+            status = .failed("Stealth temporarily unavailable. Tunnel running on WireGuard. (Hysteria 2 migration in progress.)")
+            return
+        }
 
         // Pre-flight: SS config must be in App Group for the extension to read.
         let configBlobLen = appGroupDefaults?.data(forKey: "activeShadowsocksConfig")?.count ?? 0
