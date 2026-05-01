@@ -114,9 +114,17 @@ jobs:
           # simulator slice that the App Store doesn't accept anyway.
           make ARCHS=arm64 PLATFORM_NAME=iphoneos build
           ls -la out/libwg-go.a
-          # Sanity check: verify the new symbol is present.
-          if ! nm out/libwg-go.a 2>/dev/null | grep -q wgTurnOnStealthPassthrough; then
+          # Sanity check: verify the new symbol is present. On Darwin, `nm` on
+          # a static archive (`.a`) requires `-A` (archive members) to descend
+          # into each `.o` and `-g` for global externals. Mach-O symbols are
+          # underscore-prefixed (`_wgTurnOnStealthPassthrough`) — grep matches
+          # both forms. Errors go to stdout (no `2>/dev/null`) so any nm failure
+          # is visible in the log.
+          if ! nm -gA out/libwg-go.a 2>&1 | grep -E -q '\b_?wgTurnOnStealthPassthrough\b'; then
             echo "::error::wgTurnOnStealthPassthrough symbol missing from rebuilt libwg-go.a"
+            echo "::group::nm output (debug)"
+            nm -gA out/libwg-go.a 2>&1 | grep -E 'wgTurnOn|wgVersion' | head -20 || true
+            echo "::endgroup::"
             exit 1
           fi
           echo "::notice::libwg-go.a rebuilt from source; Stealth Bind symbols present"
