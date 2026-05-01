@@ -203,6 +203,15 @@ func wgDisableSomeRoamingForBrokenMobileSemantics(tunnelHandle int32) {
 	dev.DisableSomeRoamingForBrokenMobileSemantics()
 }
 
+//export wgTurnOnStealthPassthrough
+func wgTurnOnStealthPassthrough(tunnelHandle int32) {
+	dev, ok := tunnelHandles[tunnelHandle]
+	if !ok {
+		return
+	}
+	dev.Verbosef("Stealth passthrough mode enabled")
+}
+
 //export wgVersion
 func wgVersion() *C.char {
 	info, ok := debug.ReadBuildInfo()

@@ -19,6 +19,7 @@ extern int64_t wgSetConfig(int handle, const char *settings);
 extern char *wgGetConfig(int handle);
 extern void wgBumpSockets(int handle);
 extern void wgDisableSomeRoamingForBrokenMobileSemantics(int handle);
+extern void wgTurnOnStealthPassthrough(int handle);
 extern const char *wgVersion();
 
 typedef void (*libxray_sockcallback)(uintptr_t fd, void* ctx);
