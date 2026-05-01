@@ -27,6 +27,15 @@ struct WraithVPNApp: App {
         } else if ScreenshotMode.mockConnected {
             UserDefaults.standard.set(true, forKey: "simpleMode")
         }
+
+        // Wire --mock-connected: seed the three managers with a connected state.
+        if ScreenshotMode.mockConnected {
+            MockDataSeeder.seedConnectedState(
+                regionManager: servers,
+                connectionManager: vpn,
+                havenManager: haven
+            )
+        }
     }
 
     var body: some Scene {
