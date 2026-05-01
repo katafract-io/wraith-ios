@@ -4,8 +4,8 @@
 // Post-connect DNS connectivity self-test. Runs automatically after the tunnel
 // reports .connected and surfaces results as a banner or debug log entry.
 //
-// Test 1: resolve google.com via Haven DNS (10.10.x.1) -- the node's AGH
-// Test 2: resolve google.com via 1.1.1.1 (Cloudflare fallback)
+// Test 1: resolve google.com via Haven DNS (10.11.x.1) -- the node's AGH
+// Test 2: resolve google.com via 1.1.1.1 (Cloudflare fallback, in-tunnel)
 // Test 3: check WG handshake via NETunnelProviderSession.sendProviderMessage
 //
 // Diagnosis matrix:
@@ -48,15 +48,15 @@ struct TunnelHealthReport {
             // DNS works but no handshake -- unusual, maybe timing
             return "DNS resolving but handshake status unknown"
         case (false, true, true):
-            return "Haven DNS unreachable on this node. Cloudflare fallback active."
+            return "Haven DNS unreachable on this node. Cloudflare 1.1.1.1 still resolving via tunnel."
         case (false, true, false):
-            return "WG handshake failed. DNS works via fallback only (outside tunnel)."
+            return "WG handshake failed. DNS works via Cloudflare fallback only."
         case (false, false, true):
             return "WG connected but DNS not routing through tunnel. Check AllowedIPs."
         case (false, false, false):
             return "Tunnel not routing traffic. Peer may be revoked or server unreachable. Re-provisioning recommended."
         case (true, false, _):
-            return "Haven DNS works, Cloudflare unreachable -- unexpected. Tunnel partially functional."
+            return "Haven DNS works, Cloudflare 1.1.1.1 unreachable -- unusual but tunnel is functional."
         }
     }
 
@@ -91,10 +91,16 @@ final class DNSHealthCheck {
             havenResult = .skipped
         }
 
-        // Test 2: Haven fallback DNS on fury (outside tunnel — excluded from AllowedIPs)
-        let furyHavenDNS = "85.239.240.208"
-        await dbg.dns("Test 2: resolving google.com via Haven fallback \(furyHavenDNS)")
-        let fallbackResult = await resolveDNS(server: furyHavenDNS, hostname: "google.com")
+        // Test 2: Cloudflare 1.1.1.1 (public resolver, routed through tunnel — 1.0.0.0/8
+        // falls under the 0.0.0.0/5 entry in _SPLIT_TUNNEL_IPV4). Differentiates "Haven
+        // AGH down on this node" from "tunnel itself isn't carrying DNS." Earlier this
+        // file pointed at fury's public IP (85.239.240.208), but fury's AdGuard binds
+        // on its WG mesh interface — port 53 on the public IP has nothing listening,
+        // so that test always failed and produced a false "tunnel partially functional"
+        // alert when everything was actually fine.
+        let cloudflareDNS = "1.1.1.1"
+        await dbg.dns("Test 2: resolving google.com via Cloudflare \(cloudflareDNS) (in-tunnel)")
+        let fallbackResult = await resolveDNS(server: cloudflareDNS, hostname: "google.com")
 
         // Test 3: WG handshake check via tunnel provider message
         await dbg.dns("Test 3: checking WG handshake status")
