@@ -246,6 +246,16 @@ final class WireGuardManager: ObservableObject {
                     KeychainHelper.shared.delete(for: .activePeerId)
                     KeychainHelper.shared.delete(for: .activeNodeId)
                     try await switchFromAnyExistingOrProvision(server: server)
+                } else {
+                    // Renew succeeded — peer + cached NE profile are valid. Populate
+                    // connectedServer/isProvisioned so the UI reflects the live state.
+                    // provisionAndInstall + switchAndInstall set these on their paths;
+                    // this branch had been silently leaving them nil, surfacing as
+                    // "Active server: None" in Settings after a same-node reconnect.
+                    connectedServer = server
+                    isProvisioned   = true
+                    assignedIP      = assignedIP ?? KeychainHelper.shared.readOptional(for: .wgAssignedIP)
+                    exitIP          = exitIP ?? KeychainHelper.shared.readOptional(for: .wgExitIP)
                 }
             } else {
                 // Different node — switch atomically. On 404 (stale keychain),
