@@ -175,7 +175,11 @@ type ssUDPFraming struct {
 type ssSession struct {
 	sessionID    [8]byte
 	sessionSubkey []byte // 32 bytes — derived from uPSK + sessionID, used for AEAD payload only
-	eihData      []byte // 16 bytes
+
+	// userIdentityHash = BLAKE3(uPSK)[0..16]; cached because it's
+	// constant for the user's lifetime. XORed with (sessionID||packetID)
+	// per packet to form the EIH plaintext.
+	userIdentityHash [16]byte
 
 	// Per-server-session subkey cache
 	mu           sync.Mutex
@@ -184,9 +188,8 @@ type ssSession struct {
 	// userPSK retained for on-demand server-session subkey derivation
 	userPSK []byte
 
-	// serverPSK (iPSK) retained — required for separate-header AES-ECB
-	// encryption per SIP022: separate header uses iPSK directly, NOT a
-	// session-derived subkey. Bug fix 2026-05-01 — see commit message.
+	// serverPSK (iPSK) retained — required both for separate-header
+	// AES-ECB and for the per-packet EIH AES-ECB (SIP022 multi-user UDP).
 	serverPSK []byte
 }
 
@@ -208,9 +211,10 @@ const (
 	// Receive buffer: WG MTU is 1420; SS overhead ≤ 80 bytes; round up.
 	maxSSUDPFrame = 65536
 
-	// BLAKE3 key derivation contexts (from the SS-2022 spec)
-	sessionSubkeyContext  = "shadowsocks 2022 session subkey"
-	identitySubkeyContext = "shadowsocks 2022 identity subkey"
+	// BLAKE3 key derivation context (SS-2022 session subkey).
+	// NOTE: There is no identity-subkey context in our impl — multi-user
+	// EIH uses iPSK directly per SIP022, no derivation.
+	sessionSubkeyContext = "shadowsocks 2022 session subkey"
 )
 
 // newSSBindUDP returns an ssBind configured for Phase B SS-2022 UDP relay.
@@ -278,21 +282,20 @@ func (f *ssUDPFraming) initSession() error {
 
 func newSSSession(serverPSK, userPSK []byte, sessionID [8]byte) (*ssSession, error) {
 	subkey := deriveSessionSubkey(userPSK, sessionID)
-	eih, err := deriveEIH(serverPSK, userPSK, sessionID)
-	if err != nil {
-		return nil, err
-	}
 	userPSKCopy := make([]byte, len(userPSK))
 	copy(userPSKCopy, userPSK)
 	serverPSKCopy := make([]byte, len(serverPSK))
 	copy(serverPSKCopy, serverPSK)
+	identityHash := blake3.Sum256(userPSK)
+	var idHash [16]byte
+	copy(idHash[:], identityHash[:16])
 	return &ssSession{
-		sessionID:     sessionID,
-		sessionSubkey: subkey,
-		eihData:       eih,
-		serverSubkeys: make(map[[8]byte][]byte),
-		userPSK:       userPSKCopy,
-		serverPSK:     serverPSKCopy,
+		sessionID:        sessionID,
+		sessionSubkey:    subkey,
+		userIdentityHash: idHash,
+		serverSubkeys:    make(map[[8]byte][]byte),
+		userPSK:          userPSKCopy,
+		serverPSK:        serverPSKCopy,
 	}, nil
 }
 
@@ -309,26 +312,32 @@ func deriveSessionSubkey(psk []byte, sessionID [8]byte) []byte {
 	return out
 }
 
-func deriveEIH(serverPSK, userPSK []byte, sessionID [8]byte) ([]byte, error) {
-	// eihKey = BLAKE3.deriveKey(identitySubkeyContext, serverPSK || sessionID)[0..32]
-	material := make([]byte, len(serverPSK)+8)
-	copy(material, serverPSK)
-	copy(material[len(serverPSK):], sessionID[:])
-	eihKey := make([]byte, 32)
-	blake3.DeriveKey(eihKey, identitySubkeyContext, material)
+// computeEIH builds the per-packet 16-byte multi-user EIH per SIP022:
+//
+//	plaintext  = BLAKE3(uPSK)[0..16] XOR (sessionID || packetID)
+//	ciphertext = AES-256-ECB-encrypt(iPSK[0..32], plaintext)
+//
+// The XOR uses the *plaintext* sessionID||packetID (the same bytes that
+// are about to be AES-ECB encrypted to form the separateHeader). Cipher
+// key is iPSK directly — NO BLAKE3 subkey derivation. Reference:
+// shadowsocks-rust 1.24 udprelay/aead_2022.rs make_eih (lines ~449-477).
+func computeEIH(serverPSK []byte, userIdentityHash [16]byte, sessionID [8]byte, packetID uint64) ([16]byte, error) {
+	var sessionIDPacketID [16]byte
+	copy(sessionIDPacketID[:8], sessionID[:])
+	binary.BigEndian.PutUint64(sessionIDPacketID[8:], packetID)
 
-	// userIdentity = BLAKE3(userPSK)[0..16]
-	userPSKHash := blake3.Sum256(userPSK)
-	userIdentity := userPSKHash[:16]
-
-	// AES-256-ECB encrypt the 16-byte identity block
-	block, err := aes.NewCipher(eihKey)
-	if err != nil {
-		return nil, fmt.Errorf("ssframing: deriveEIH AES: %w", err)
+	var plaintext [16]byte
+	for i := 0; i < 16; i++ {
+		plaintext[i] = userIdentityHash[i] ^ sessionIDPacketID[i]
 	}
-	eih := make([]byte, 16)
-	block.Encrypt(eih, userIdentity)
-	return eih, nil
+
+	block, err := aes.NewCipher(serverPSK)
+	if err != nil {
+		return [16]byte{}, fmt.Errorf("ssframing: computeEIH AES: %w", err)
+	}
+	var ciphertext [16]byte
+	block.Encrypt(ciphertext[:], plaintext[:])
+	return ciphertext, nil
 }
 
 // --------------------------------------------------------------------------
@@ -585,10 +594,23 @@ func buildClientFrame(sess *ssSession, packetID uint64, targetIP net.IP, targetP
 	}
 	aeadCT := gcm.Seal(nil, nonce, plaintext, nil)
 
-	// 5. Assemble: separateCT(16) || EIH(16) || aeadCT
+	// 5. Compute per-packet EIH (multi-user). Per SIP022, EIH plaintext
+	//    XORs hash(uPSK) with the *plaintext* sessionID||packetID, then
+	//    AES-256-ECB-encrypts with iPSK. Must be regenerated per packet
+	//    because packetID varies. Pre-computing once at session creation
+	//    (which we did before this fix) caused server-side EIH decrypt
+	//    to recover stable garbage XORed with the changing packetID,
+	//    matching the "user identity not found" pattern with 15 stable
+	//    bytes + 1 varying byte (the low byte of packetID's BE encoding).
+	eih, err := computeEIH(sess.serverPSK, sess.userIdentityHash, sess.sessionID, packetID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 6. Assemble: separateCT(16) || EIH(16) || aeadCT
 	frame := make([]byte, separateHeaderSize+eihSize+len(aeadCT))
 	copy(frame[:separateHeaderSize], separateCT)
-	copy(frame[separateHeaderSize:separateHeaderSize+eihSize], sess.eihData)
+	copy(frame[separateHeaderSize:separateHeaderSize+eihSize], eih[:])
 	copy(frame[separateHeaderSize+eihSize:], aeadCT)
 
 	return frame, nil
