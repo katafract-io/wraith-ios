@@ -296,7 +296,9 @@ func deriveSessionSubkey(psk []byte, sessionID [8]byte) []byte {
 	material := make([]byte, len(psk)+8)
 	copy(material, psk)
 	copy(material[len(psk):], sessionID[:])
-	return blake3.DeriveKey(32, sessionSubkeyContext, material)
+	out := make([]byte, 32)
+	blake3.DeriveKey(out, sessionSubkeyContext, material)
+	return out
 }
 
 func deriveEIH(serverPSK, userPSK []byte, sessionID [8]byte) ([]byte, error) {
@@ -304,7 +306,8 @@ func deriveEIH(serverPSK, userPSK []byte, sessionID [8]byte) ([]byte, error) {
 	material := make([]byte, len(serverPSK)+8)
 	copy(material, serverPSK)
 	copy(material[len(serverPSK):], sessionID[:])
-	eihKey := blake3.DeriveKey(32, identitySubkeyContext, material)
+	eihKey := make([]byte, 32)
+	blake3.DeriveKey(eihKey, identitySubkeyContext, material)
 
 	// userIdentity = BLAKE3(userPSK)[0..16]
 	userPSKHash := blake3.Sum256(userPSK)
