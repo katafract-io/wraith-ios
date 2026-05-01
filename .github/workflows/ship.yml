@@ -280,15 +280,50 @@ jobs:
               -d "\$PAYLOAD" || true
           done
 
-      - name: Upload to TestFlight
+      - name: Install Ruby deps for fastlane (Ruby 3.3.x via rbenv or system)
         if: success() && github.event.inputs.skip_upload != 'true'
+        run: |
+          RUBY_BIN=""
+          if [ -x "${HOME}/.rbenv/versions/3.3.11/bin/ruby" ]; then
+            RUBY_BIN="${HOME}/.rbenv/versions/3.3.11/bin/ruby"
+          elif command -v rbenv >/dev/null 2>&1; then
+            eval "$(rbenv init - bash)"
+            RUBY_BIN="$(rbenv which ruby 2>/dev/null)"
+          fi
+          if [ -z "$RUBY_BIN" ] || [ ! -x "$RUBY_BIN" ]; then
+            RUBY_BIN="$(command -v ruby 2>/dev/null)"
+          fi
+          if [ -z "$RUBY_BIN" ] || [ ! -x "$RUBY_BIN" ]; then
+            echo "::error::Could not find Ruby 3.3.x"; exit 1
+          fi
+          export PATH="$(dirname "$RUBY_BIN"):$PATH"
+          $RUBY_BIN --version
+          $RUBY_BIN -S bundle --version || $RUBY_BIN -S gem install bundler
+          $RUBY_BIN -S bundle config set --local path 'vendor/bundle'
+          $RUBY_BIN -S bundle install --jobs 4 --retry 3 2>&1 | tail -20
+          $RUBY_BIN -S bundle exec fastlane --version 2>&1 | head -3
+          # Persist for next step
+          echo "RUBY_BIN=$RUBY_BIN" >> "$GITHUB_ENV"
+
+      - name: Upload to TestFlight (fastlane pilot)
+        if: success() && github.event.inputs.skip_upload != 'true'
+        shell: bash -eo pipefail {0}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          FASTLANE_HIDE_CHANGELOG: 1
+          FASTLANE_SKIP_UPDATE_CHECK: 1
+          LC_ALL: en_US.UTF-8
+          LANG: en_US.UTF-8
         run: |
-          xcrun altool --upload-app -f "$EXPORT_PATH"/*.ipa -t ios \
-            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tee /tmp/altool.log | tail -20
-          grep -q "UPLOAD SUCCEEDED" /tmp/altool.log
+          export PATH="$(dirname "$RUBY_BIN"):$PATH"
+          IPA_PATH="$(ls "$EXPORT_PATH"/*.ipa | head -1)"
+          if [ -z "$IPA_PATH" ] || [ ! -f "$IPA_PATH" ]; then
+            echo "::error::No IPA found in $EXPORT_PATH"; exit 1
+          fi
+          echo "Uploading $IPA_PATH (build $BUILD_NUM) via fastlane pilot…"
+          # Tee to /tmp/altool.log so downstream notify steps' UUID grep stays compatible.
+          $RUBY_BIN -S bundle exec fastlane upload_testflight ipa:"$IPA_PATH" 2>&1 | tee /tmp/altool.log
 
       - name: Distribute to Internal Testing
         if: success() && github.event.inputs.skip_upload != 'true'
