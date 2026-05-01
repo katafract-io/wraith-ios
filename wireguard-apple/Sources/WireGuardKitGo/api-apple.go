@@ -15,8 +15,10 @@ package main
 import "C"
 
 import (
+	"encoding/base64"
 	"fmt"
 	"math"
+	"net"
 	"os"
 	"os/signal"
 	"runtime"
@@ -97,6 +99,72 @@ func wgTurnOn(settings *C.char, tunFd int32) int32 {
 //export wgTurnOnStealthPassthrough
 func wgTurnOnStealthPassthrough(settings *C.char, tunFd int32) int32 {
 	return wgTurnOnWithBind(settings, tunFd, newSSBindPassthrough())
+}
+
+// wgTurnOnStealthUDP boots the WG device with the Stealth-mode ssBind
+// configured for Phase B: real SS-2022 UDP relay framing. Every WireGuard
+// datagram is wrapped in a Shadowsocks-2022 "2022-blake3-aes-256-gcm" UDP
+// frame and sent to the ssservice relay at relayHost:relayPort (UDP 8443).
+//
+// Parameters:
+//
+//	settings    — WireGuard UAPI config string (same as wgTurnOn)
+//	tunFd       — tunnel file descriptor
+//	combinedPSK — "SERVER_PSK:USER_PSK" (both base64-encoded 32-byte keys,
+//	              colon-separated — matches shadowsocks_fallback.password from
+//	              the provision API response)
+//	relayHost   — ssservice relay hostname or IP (e.g. "vpn-pdx-01.vpn.katafract.com")
+//	relayPort   — ssservice relay port (8443)
+//	targetIP    — WireGuard node public IP (e.g. "64.176.215.96") — embedded
+//	              in the SS frame target-address field
+//	targetPort  — WireGuard node listen port (51820)
+//
+//export wgTurnOnStealthUDP
+func wgTurnOnStealthUDP(settings *C.char, tunFd int32,
+	combinedPSK *C.char, relayHost *C.char, relayPort int32,
+	targetIP *C.char, targetPort int32) int32 {
+
+	logger := &device.Logger{
+		Verbosef: CLogger(0).Printf,
+		Errorf:   CLogger(1).Printf,
+	}
+
+	// Parse combined "SERVER_PSK:USER_PSK" password
+	pskStr := C.GoString(combinedPSK)
+	parts := strings.SplitN(pskStr, ":", 2)
+	if len(parts) != 2 {
+		logger.Errorf("wgTurnOnStealthUDP: combinedPSK must be 'SERVER_PSK:USER_PSK' (colon-separated base64)")
+		return -1
+	}
+	serverPSK, err := base64.StdEncoding.DecodeString(parts[0])
+	if err != nil {
+		logger.Errorf("wgTurnOnStealthUDP: SERVER_PSK base64 decode: %v", err)
+		return -1
+	}
+	userPSK, err := base64.StdEncoding.DecodeString(parts[1])
+	if err != nil {
+		logger.Errorf("wgTurnOnStealthUDP: USER_PSK base64 decode: %v", err)
+		return -1
+	}
+	if len(serverPSK) != 32 || len(userPSK) != 32 {
+		logger.Errorf("wgTurnOnStealthUDP: PSK lengths wrong: serverPSK=%d userPSK=%d (expected 32 each)", len(serverPSK), len(userPSK))
+		return -1
+	}
+
+	targetIPParsed := net.ParseIP(C.GoString(targetIP))
+	if targetIPParsed == nil {
+		logger.Errorf("wgTurnOnStealthUDP: invalid targetIP: %s", C.GoString(targetIP))
+		return -1
+	}
+
+	bind, err := newSSBindUDP(serverPSK, userPSK, C.GoString(relayHost), uint16(relayPort), targetIPParsed, uint16(targetPort))
+	if err != nil {
+		logger.Errorf("wgTurnOnStealthUDP: newSSBindUDP: %v", err)
+		return -1
+	}
+
+	logger.Verbosef("wgTurnOnStealthUDP: relay=%s:%d target=%s:%d", C.GoString(relayHost), relayPort, C.GoString(targetIP), targetPort)
+	return wgTurnOnWithBind(settings, tunFd, bind)
 }
 
 // wgTurnOnWithBind is the shared device-construction path. Identical to the

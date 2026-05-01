@@ -67,6 +67,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // tunnel comes up with the custom ssBind installed (today the Bind
         // just delegates to StdNetBind — pure substitution-point validation).
         let phaseAEnabled = appGroupDefaults?.bool(forKey: "phaseAStealthPassthrough") ?? false
+
+        // Phase B debug knob: the diagnostics screen flips `phaseBStealthUDP`
+        // in App Group UserDefaults and reconnects. When set, route `start`
+        // through `startStealthUDP` so every WG datagram is wrapped in a
+        // real SS-2022 UDP relay frame and sent to the ssservice relay on :8443.
+        // Requires `activeShadowsocksConfig` to be present in App Group.
+        let phaseBEnabled = appGroupDefaults?.bool(forKey: "phaseBStealthUDP") ?? false
+
         let startCompletion: (WireGuardAdapterError?) -> Void = { [weak self] adapterError in
             guard let self else {
                 writeTunnelError("startTunnel: adapter deallocated before start completed")
@@ -77,7 +85,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let adapterError else {
                 let interfaceName = self.adapter.interfaceName ?? "unknown"
                 appGroupDefaults?.removeObject(forKey: "lastTunnelError")
-                TunnelLog.wg(.info, "WireGuard tunnel started on interface \(interfaceName) (stealthPassthrough=\(phaseAEnabled))")
+                let tag = phaseBEnabled ? "stealthUDP" : (phaseAEnabled ? "stealthPassthrough" : "standard")
+                TunnelLog.wg(.info, "WireGuard tunnel started on interface \(interfaceName) (\(tag))")
                 completionHandler(nil)
                 return
             }
@@ -86,7 +95,29 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(adapterError.asTunnelError)
         }
 
-        if phaseAEnabled {
+        if phaseBEnabled {
+            // Build SS-2022 params from the stored activeShadowsocksConfig
+            guard let configData = appGroupDefaults?.data(forKey: "activeShadowsocksConfig"),
+                  let ssConfig = try? JSONDecoder().decode(ShadowsocksConfig.self, from: configData) else {
+                writeTunnelError("startTunnel: phaseBStealthUDP enabled but activeShadowsocksConfig missing — falling back to standard")
+                TunnelLog.ne(.error, "startTunnel: phaseBStealthUDP requires activeShadowsocksConfig — falling back to standard WG")
+                adapter.start(tunnelConfiguration: tunnelConfiguration, completionHandler: startCompletion)
+                return
+            }
+            // The server field in ShadowsocksConfig is the relay hostname (e.g. "vpn-pdx-01.vpn.katafract.com").
+            // The targetIP is the WG node public IP — stored in App Group as "wgExitIP" by WireGuardManager.
+            let targetIP = appGroupDefaults?.string(forKey: "wgExitIP") ?? ssConfig.server
+            let ssParams = ShadowsocksSSUDPParams(
+                combinedPSK: ssConfig.password,
+                relayHost:   ssConfig.server,
+                relayPort:   Int32(ssConfig.port),
+                targetIP:    targetIP,
+                targetPort:  51820
+            )
+            TunnelLog.ne(.info, "startTunnel: routing through Stealth UDP relay (Phase B) — relay=\(ssConfig.server):\(ssConfig.port)")
+            adapter.startStealthUDP(tunnelConfiguration: tunnelConfiguration, ssParams: ssParams,
+                                    completionHandler: startCompletion)
+        } else if phaseAEnabled {
             TunnelLog.ne(.info, "startTunnel: routing through Stealth passthrough Bind (Phase A)")
             adapter.startStealthPassthrough(tunnelConfiguration: tunnelConfiguration, completionHandler: startCompletion)
         } else {
