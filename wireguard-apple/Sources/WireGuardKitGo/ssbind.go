@@ -174,7 +174,7 @@ type ssUDPFraming struct {
 // ssSession holds the per-session cryptographic material.
 type ssSession struct {
 	sessionID    [8]byte
-	sessionSubkey []byte // 32 bytes
+	sessionSubkey []byte // 32 bytes — derived from uPSK + sessionID, used for AEAD payload only
 	eihData      []byte // 16 bytes
 
 	// Per-server-session subkey cache
@@ -183,6 +183,11 @@ type ssSession struct {
 
 	// userPSK retained for on-demand server-session subkey derivation
 	userPSK []byte
+
+	// serverPSK (iPSK) retained — required for separate-header AES-ECB
+	// encryption per SIP022: separate header uses iPSK directly, NOT a
+	// session-derived subkey. Bug fix 2026-05-01 — see commit message.
+	serverPSK []byte
 }
 
 const (
@@ -279,12 +284,15 @@ func newSSSession(serverPSK, userPSK []byte, sessionID [8]byte) (*ssSession, err
 	}
 	userPSKCopy := make([]byte, len(userPSK))
 	copy(userPSKCopy, userPSK)
+	serverPSKCopy := make([]byte, len(serverPSK))
+	copy(serverPSKCopy, serverPSK)
 	return &ssSession{
 		sessionID:     sessionID,
 		sessionSubkey: subkey,
 		eihData:       eih,
 		serverSubkeys: make(map[[8]byte][]byte),
 		userPSK:       userPSKCopy,
+		serverPSK:     serverPSKCopy,
 	}, nil
 }
 
@@ -538,8 +546,11 @@ func (f *ssUDPFraming) makeReceiveFunc(udpConn *net.UDPConn) conn.ReceiveFunc {
 // --------------------------------------------------------------------------
 
 func buildClientFrame(sess *ssSession, packetID uint64, targetIP net.IP, targetPort uint16, payload []byte) ([]byte, error) {
-	// 1. Encrypt separateHeader: AES-256-ECB(subkey, sessionID || packetID)
-	separateCT, err := encryptSeparateHeader(sess.sessionSubkey, sess.sessionID, packetID)
+	// 1. Encrypt separateHeader with iPSK (server master PSK) — SIP022 §UDP/multi-user
+	//    requires AES-256-ECB(iPSK[..32]) here. Using sessionSubkey (derived
+	//    from uPSK) was the bug that left ss-rust unable to recover the
+	//    session_id and rendered every packet "user not found" on the server.
+	separateCT, err := encryptSeparateHeader(sess.serverPSK, sess.sessionID, packetID)
 	if err != nil {
 		return nil, err
 	}
@@ -596,55 +607,29 @@ func parseServerFrame(sess *ssSession, frame []byte) ([]byte, error) {
 	separateCT := frame[:separateHeaderSize]
 
 	// ---- Decode server's separateHeader ----
-	// The server uses its own session_id to derive its own session subkey.
-	// We don't know the server's session_id until we decrypt the separateHeader —
-	// which requires knowing the server's session subkey first. Circular.
+	// Per SIP022 §UDP/multi-user, the server encrypts its response
+	// separateHeader with iPSK (the same master server PSK used by the
+	// client for outgoing packets). No bootstrapping or trial-key dance
+	// is needed — we just AES-256-ECB-decrypt with sess.serverPSK to
+	// recover the server's session_id and packet_id.
 	//
-	// The practical bootstrap (used by shadowsocks-rust):
-	//   1. Extract the first 8 bytes of the ENCRYPTED separateHeader as a
-	//      candidate server_session_id.
-	//   2. Derive a trial subkey from (userPSK, candidate_server_session_id).
-	//   3. Decrypt the separateHeader; verify the decrypted session_id matches
-	//      the candidate. If yes → we have the correct server session subkey.
-	//
-	// For subsequent frames from the same server session, the subkey is cached.
-	var (
-		serverSessionID [8]byte
-		subkey          []byte
-		found           bool
-	)
+	// Once we have server_session_id we cache the AEAD subkey
+	// (derived from uPSK + server_session_id) for fast-path on subsequent
+	// frames in the same server session.
+	serverSessionID, _, err := decryptSeparateHeader(sess.serverPSK, separateCT)
+	if err != nil {
+		return nil, fmt.Errorf("ssframing: parseServerFrame separateHeader: %w", err)
+	}
 
-	// Try all cached server sessions first (fast path after bootstrap)
+	var subkey []byte
 	sess.mu.Lock()
-	for sid, sk := range sess.serverSubkeys {
-		decSID, _, err := decryptSeparateHeader(sk, separateCT)
-		if err == nil && decSID == sid {
-			serverSessionID = decSID
-			subkey = sk
-			found = true
-			break
-		}
+	if cached, ok := sess.serverSubkeys[serverSessionID]; ok {
+		subkey = cached
+	} else {
+		subkey = deriveSessionSubkey(sess.userPSK, serverSessionID)
+		sess.serverSubkeys[serverSessionID] = subkey
 	}
 	sess.mu.Unlock()
-
-	if !found {
-		// Bootstrap: treat the first 8 bytes of encrypted separateHeader as
-		// the candidate server_session_id.
-		copy(serverSessionID[:], separateCT[:8])
-		trialSubkey := deriveSessionSubkey(sess.userPSK, serverSessionID)
-		decSID, _, err := decryptSeparateHeader(trialSubkey, separateCT)
-		if err == nil && decSID == serverSessionID {
-			subkey = trialSubkey
-			found = true
-			sess.mu.Lock()
-			sess.serverSubkeys[serverSessionID] = trialSubkey
-			sess.mu.Unlock()
-		}
-	}
-
-	if !found {
-		return nil, fmt.Errorf("ssframing: cannot resolve server session subkey")
-	}
 
 	// ---- AEAD decrypt ----
 	// Server → client frame: separateCT(16) || aeadCT (no EIH from server)
