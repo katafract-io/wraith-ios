@@ -447,16 +447,20 @@ struct SubscriptionInfo: Equatable {
     let plan: String
     let expiresAt: Date?
     let token: String
+    let isFounder: Bool
 
     var planDisplayName: String {
+        // Founder is always "Founder" — even when the underlying plan field
+        // is `sovereign_annual` (the storage shape per platform spec). Stale
+        // cached plan strings (e.g. legacy `enclave_plus`) also collapse to
+        // "Founder" here so the UI never surfaces a retired tier label to a
+        // grandfathered Founder.
+        if isFounder { return "Founder" }
         switch plan {
-        case "founder":               return "Founder"
         case "haven":                 return "Haven"
         case "haven_annual":          return "Haven Annual"
         case "enclave":               return "Enclave"
         case "enclave_annual":        return "Enclave Annual"
-        case "enclave_plus":          return "Enclave+"
-        case "enclave_plus_annual":   return "Enclave+ Annual"
         case "sovereign":             return "Sovereign"
         case "sovereign_annual":      return "Sovereign Annual"
         default:                      return plan
