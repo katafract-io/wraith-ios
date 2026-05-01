@@ -54,12 +54,20 @@ final class HysteriaTransport {
             throw NSError(domain: "HysteriaTransport", code: -1,
                           userInfo: [NSLocalizedDescriptionKey: "HysHysbindNewClient returned nil"])
         }
-        let local = try c.start(server,
-                                serverPort: port,
-                                auth: auth,
-                                sni: sni,
-                                insecureSkipVerify: false,
-                                wgRemote: wgRemote)
+        // gomobile-generated Swift signature is non-throwing because the Go
+        // shim's `Start` returns (string, error) with both nonnull on success
+        // — the Objective-C bridging rule for `func foo(...) throws` requires
+        // the success-return to be nullable. So we use the explicit
+        // NSErrorPointer pattern and re-throw.
+        var err: NSError?
+        let local = c.start(server,
+                            serverPort: port,
+                            auth: auth,
+                            sni: sni,
+                            insecureSkipVerify: false,
+                            wgRemote: wgRemote,
+                            error: &err)
+        if let err = err { throw err }
         client = c
         localEndpoint = local
         return local
@@ -68,7 +76,11 @@ final class HysteriaTransport {
     /// Tear down the local listener and close the Hysteria connection.
     /// Idempotent — safe to call after a failed start or twice on shutdown.
     func stop() {
-        try? client?.stop()
+        if let c = client {
+            var err: NSError?
+            _ = c.stop(&err)
+            // Stop errors are logged but don't bubble — teardown is best-effort.
+        }
         client = nil
         localEndpoint = nil
     }
