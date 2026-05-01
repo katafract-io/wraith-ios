@@ -935,6 +935,20 @@ final class WireGuardManager: ObservableObject {
         TelemetryManager.shared.recordReprovision()
         DebugLogger.shared.wg("Health check FAILED: soft reconnect insufficient. Full reprovision (attempt \(reprovisionAttempts)/\(maxReprovisionAttempts))...")
 
+        // Detach the reprovision so it survives cancellation of the enclosing
+        // healthCheckTask. The next .connected NE transition cancels the
+        // current healthCheckTask (line ~1528) — without detaching, a
+        // user-triggered Stealth toggle or any tunnel state churn during
+        // reprovision aborts the provisionPeer URLSession with
+        // CancellationError, leaving AllowedIPs stale.
+        Task.detached { [weak self] in
+            await self?.performAutoReprovision()
+        }
+    }
+
+    /// Body of the "attempt 2/2" reprovision. Runs in a detached Task so it
+    /// completes independently of the cancellable healthCheckTask tree.
+    private func performAutoReprovision() async {
         // Tear down the dead tunnel and re-provision.
         // Do NOT clear Keychain peerId/nodeId here — provisionAndInstall overwrites
         // them on success. Clearing eagerly leaves an orphan-state combination
