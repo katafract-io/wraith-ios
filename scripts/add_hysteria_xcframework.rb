@@ -16,12 +16,19 @@ TARGET_NAME     = 'WireGuardTunnel'
 
 project = Xcodeproj::Project.open(PROJECT_PATH)
 
-target = project.targets.find { |t| t.name == TARGET_NAME }
-abort("target #{TARGET_NAME} not found") unless target
+ext_target = project.targets.find { |t| t.name == TARGET_NAME }
+abort("extension target #{TARGET_NAME} not found") unless ext_target
+
+# Find the main app target. App Store rule: frameworks must be embedded in the
+# main .app bundle, not in the .appex. The extension target only LINKS the
+# framework — embedding goes on the app target. Embedding inside the appex
+# triggers altool 90205/90206: "disallowed nested bundles" / "disallowed file
+# 'Frameworks'".
+app_target = project.targets.find { |t| t.name == 'WraithVPN' }
+abort("app target WraithVPN not found") unless app_target
 
 # 1. PBXFileReference for the xcframework, anchored under the WraithVPN/Frameworks group
 group = project.main_group.find_subpath('WraithVPN/Frameworks', true)
-group.set_source_tree('<group>')
 # Use a filesystem-path group (path = Frameworks), not a logical name-only
 # group. Without path=, Xcode resolves children against the parent group's
 # directory (WraithVPN/), so the xcframework path collapses to
@@ -29,20 +36,37 @@ group.set_source_tree('<group>')
 # found at WraithVPN/Hysteria.xcframework". With path=Frameworks the
 # children resolve to WraithVPN/Frameworks/Hysteria.xcframework as written.
 group.set_path('Frameworks')
+group.set_source_tree('<group>')
 
 existing = group.files.find { |f| f.path&.end_with?('Hysteria.xcframework') }
 ref = existing || group.new_file('Hysteria.xcframework')
 ref.set_source_tree('<group>')
 
-# 2. Add to target's Frameworks build phase (link)
-unless target.frameworks_build_phase.files_references.include?(ref)
-  target.frameworks_build_phase.add_file_reference(ref, true)
+# 2. EXTENSION target: link only (no embed — appex can't host its own
+#    frameworks per App Store policy).
+unless ext_target.frameworks_build_phase.files_references.include?(ref)
+  ext_target.frameworks_build_phase.add_file_reference(ref, true)
+end
+# Strip any prior embed entry on the appex (left over from earlier scripts).
+ext_target.copy_files_build_phases.each do |phase|
+  next unless phase.symbol_dst_subfolder_spec == :frameworks
+  phase.files.dup.each do |bf|
+    if bf.file_ref == ref
+      phase.remove_build_file(bf)
+      puts "removed Embed Frameworks entry from #{TARGET_NAME} (appex can't embed)"
+    end
+  end
 end
 
-# 3. Add to target's Embed Frameworks build phase (NE extensions still need it
-#    embedded so the loader finds the dylib at runtime).
-embed_phase = target.copy_files_build_phases.find { |p| p.symbol_dst_subfolder_spec == :frameworks }
-embed_phase ||= target.new_copy_files_build_phase('Embed Frameworks').tap do |p|
+# 3. APP target: link AND embed. The extension picks up the framework at
+#    runtime via the standard @rpath = "@executable_path/../../Frameworks"
+#    that Xcode bakes into appex binaries that reference the main app's
+#    frameworks dir.
+unless app_target.frameworks_build_phase.files_references.include?(ref)
+  app_target.frameworks_build_phase.add_file_reference(ref, true)
+end
+embed_phase = app_target.copy_files_build_phases.find { |p| p.symbol_dst_subfolder_spec == :frameworks }
+embed_phase ||= app_target.new_copy_files_build_phase('Embed Frameworks').tap do |p|
   p.symbol_dst_subfolder_spec = :frameworks
 end
 unless embed_phase.files_references.include?(ref)
@@ -51,22 +75,25 @@ unless embed_phase.files_references.include?(ref)
   build_file.settings['ATTRIBUTES'] = ['CodeSignOnCopy', 'RemoveHeadersOnCopy']
 end
 
-# 4. FRAMEWORK_SEARCH_PATHS — make sure the xcframework folder is on the search path
-target.build_configurations.each do |config|
-  paths = config.build_settings['FRAMEWORK_SEARCH_PATHS'] || ['$(inherited)']
-  paths = [paths] unless paths.is_a?(Array)
-  marker = '$(PROJECT_DIR)/WraithVPN/Frameworks'
-  paths << marker unless paths.include?(marker)
-  config.build_settings['FRAMEWORK_SEARCH_PATHS'] = paths
+# 4. FRAMEWORK_SEARCH_PATHS on BOTH targets — both link against the framework
+#    at compile time, so both need the search path.
+[ext_target, app_target].each do |t|
+  t.build_configurations.each do |config|
+    paths = config.build_settings['FRAMEWORK_SEARCH_PATHS'] || ['$(inherited)']
+    paths = [paths] unless paths.is_a?(Array)
+    marker = '$(PROJECT_DIR)/WraithVPN/Frameworks'
+    paths << marker unless paths.include?(marker)
+    config.build_settings['FRAMEWORK_SEARCH_PATHS'] = paths
+  end
 end
 
 # 5. Add HysteriaTransport.swift to the WireGuardTunnel target sources.
 wgt_group = project.main_group.find_subpath('WireGuardTunnel', false)
 hys_swift = wgt_group.files.find { |f| f.path == 'HysteriaTransport.swift' }
 hys_swift ||= wgt_group.new_reference('HysteriaTransport.swift')
-unless target.source_build_phase.files_references.include?(hys_swift)
-  target.source_build_phase.add_file_reference(hys_swift, true)
+unless ext_target.source_build_phase.files_references.include?(hys_swift)
+  ext_target.source_build_phase.add_file_reference(hys_swift, true)
 end
 
 project.save
-puts "wired #{FRAMEWORK_PATH} + HysteriaTransport.swift into #{TARGET_NAME}"
+puts "wired #{FRAMEWORK_PATH}: linked into #{TARGET_NAME} (no embed), linked + embedded into WraithVPN app target; HysteriaTransport.swift in #{TARGET_NAME}"
