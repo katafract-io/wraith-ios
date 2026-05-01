@@ -1,21 +1,9 @@
 name: Auto-refresh App Store screenshots
 
-# Doctrine: feedback_screenshots_never_manual.md
-# Every UI change auto-regenerates + uploads screenshots via ASC API.
+# Doctrine: .doctrine/screenshot-pipeline.md (on-demand only — Tek prompts to run).
+# Auto-fire on push retired 2026-04-30 per marketing-truth + parity audit doctrine.
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'Sources/UI/**/*.swift'
-      - 'Sources/Views/**/*.swift'
-      - 'Sources/Features/**/*.swift'
-      - 'WraithVPN/**/*.swift'
-      - '**/Assets.xcassets/**'
-      - '**/*.entitlements'
-      - 'fastlane/Snapfile'
-      - 'fastlane/Fastfile'
-      - '.github/workflows/screenshots.yml'
   workflow_dispatch:
     inputs:
       force:
