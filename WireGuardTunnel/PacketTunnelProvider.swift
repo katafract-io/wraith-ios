@@ -88,7 +88,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         TunnelLog.ne(.info, "stopTunnel called, reason=\(reason.rawValue)")
 
         adapter.stop { adapterError in
-            if let adapterError {
+            // `.invalidState` is benign: the adapter is already stopped, which
+            // happens routinely when the SS-fallback engagement path stops the
+            // adapter and then the OS calls stopTunnel again on its own. Other
+            // adapter errors are real and worth surfacing.
+            if let adapterError, case .invalidState = adapterError {
+                TunnelLog.wg(.debug, "stopTunnel: adapter already stopped (.invalidState — benign)")
+            } else if let adapterError {
                 TunnelLog.wg(.error, "Failed to stop WireGuard adapter: \(String(describing: adapterError))")
             }
             completionHandler()

@@ -1010,7 +1010,8 @@ final class WireGuardManager: ObservableObject {
             if let reply, reply.first == 0x01 {
                 DebugLogger.shared.stealth("extension confirmed transport switch — activeTransport=.shadowsocks")
                 activeTransport = .shadowsocks
-                status = .connected  // optimistic; will re-health-check on next cycle
+                status = .connected  // optimistic; sanity probe below confirms or rolls back
+                await verifyShadowsocksRouting()
             } else {
                 DebugLogger.shared.stealth("ABORT (cause=ext-reply-nonsuccess): extension returned non-0x01 — transport.start likely failed inside extension; check 'ext'-tagged Stealth lines for underlying cause")
                 // Surface to the user that Stealth didn't engage.
@@ -1022,6 +1023,51 @@ final class WireGuardManager: ObservableObject {
             status = .failed("Stealth unreachable: IPC error — \(error.localizedDescription)")
             await restartWireGuardAfterSSFailure(reason: "IPC threw: \(error.localizedDescription)")
         }
+    }
+
+    /// Confirms that user traffic is actually flowing through the Shadowsocks
+    /// transport after the extension reports a successful switch. Closes the
+    /// "engaged but black-hole" failure mode where the IPC reply says
+    /// `transport active, pumps running` but no packet ever reaches its
+    /// destination — the user otherwise sits on a green badge with zero
+    /// connectivity until they manually toggle Stealth off.
+    ///
+    /// Probe: wait 2.5s for the SS read/write loops to settle, then run the
+    /// usual DNSHealthCheck (Haven inside-tunnel + fury outside-tunnel). If
+    /// both DNS tests fail, treat SS as non-routing on this network and fall
+    /// back to direct WireGuard with a clear "Stealth unavailable" status.
+    private func verifyShadowsocksRouting() async {
+        try? await Task.sleep(for: .milliseconds(2500))
+        guard !Task.isCancelled else { return }
+        // If something else already took the tunnel down (user disconnect,
+        // reprovision, mode switch), don't second-guess it.
+        guard activeTransport == .shadowsocks, status == .connected else {
+            DebugLogger.shared.stealth("post-engagement probe: skipped — activeTransport=\(activeTransport.rawValue) status=\(status.label)")
+            return
+        }
+
+        let havenIP: String? = {
+            guard let assigned = assignedIP else { return nil }
+            let parts = assigned.split(separator: ".")
+            guard parts.count == 4 else { return nil }
+            return "\(parts[0]).\(parts[1]).\(parts[2]).1"
+        }()
+
+        let report = await DNSHealthCheck.shared.runHealthCheck(
+            havenDNSIP: havenIP,
+            connection: tunnelProviderSession
+        )
+
+        if report.havenDNS.isPassed || report.fallbackDNS.isPassed {
+            DebugLogger.shared.stealth("post-engagement probe: SS routing OK — haven=\(report.havenDNS.isPassed) fallback=\(report.fallbackDNS.isPassed)")
+            return
+        }
+
+        // Both DNS tests failed — SS is engaged but no packets are reaching
+        // anything. Surface honestly and fall back to direct WireGuard.
+        DebugLogger.shared.stealth("post-engagement probe: REJECT — both DNS tests failed; SS engaged but not routing. Reverting to WireGuard.")
+        status = .failed("Stealth unavailable on this network. Tunnel reverted to WireGuard.")
+        await restartWireGuardAfterSSFailure(reason: "SS engaged but no traffic routes (post-engagement DNS probe failed)")
     }
 
     /// Recovery helper: restarts the WireGuard adapter when Shadowsocks fallback fails.
