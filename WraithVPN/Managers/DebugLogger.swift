@@ -201,6 +201,7 @@ final class DebugLogger: ObservableObject {
     var exportText: String {
         let header = """
         WraithVPN Debug Log
+        App: \(buildInfo)
         Device: \(deviceInfo)
         Exported: \(ISO8601DateFormatter().string(from: Date()))
         Entries: \(entries.count)
@@ -237,5 +238,12 @@ final class DebugLogger: ObservableObject {
 #else
         "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
 #endif
+    }
+
+    private var buildInfo: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "WraithVPN \(version) (\(build))"
     }
 }
