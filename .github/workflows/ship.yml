@@ -88,6 +88,47 @@ jobs:
           security set-keychain-settings -lut 7200 "$KEYCHAIN"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "$KEYCHAIN" >/dev/null 2>&1
 
+      - name: Build WireGuardKitGo (libwg-go.a from Go sources)
+        run: |
+          set -eo pipefail
+          # WireGuardKitGo's prebuilt libwg-go.a in out/ is checked into git but
+          # only refreshed when someone manually runs `make` on a Mac. That's
+          # fragile — anyone touching api-apple.go / ssbind.go would otherwise
+          # ship a stale .a. Build it from source on every CI run.
+
+          # The runner's default PATH doesn't include brew on Apple Silicon
+          # (/opt/homebrew/bin) or Intel (/usr/local/bin). Add both so we find
+          # whichever architecture we're running on.
+          export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:$PATH"
+
+          if ! command -v go >/dev/null 2>&1; then
+            echo "::notice::go not found on PATH, installing via brew"
+            brew install go
+            # Re-export PATH after install in case brew put go somewhere new.
+            eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
+          fi
+          go version
+          cd wireguard-apple/Sources/WireGuardKitGo
+          # iOS device target (arm64 only — App Store builds don't ship x86_64).
+          # PLATFORM_NAME=iphoneos selects the iOS SDK; ARCHS=arm64 skips the
+          # simulator slice that the App Store doesn't accept anyway.
+          make ARCHS=arm64 PLATFORM_NAME=iphoneos build
+          ls -la out/libwg-go.a
+          # Sanity check: verify the new symbol is present. On Darwin, `nm` on
+          # a static archive (`.a`) requires `-A` (archive members) to descend
+          # into each `.o` and `-g` for global externals. Mach-O symbols are
+          # underscore-prefixed (`_wgTurnOnStealthPassthrough`) — grep matches
+          # both forms. Errors go to stdout (no `2>/dev/null`) so any nm failure
+          # is visible in the log.
+          if ! nm -gA out/libwg-go.a 2>&1 | grep -E -q '\b_?wgTurnOnStealthPassthrough\b'; then
+            echo "::error::wgTurnOnStealthPassthrough symbol missing from rebuilt libwg-go.a"
+            echo "::group::nm output (debug)"
+            nm -gA out/libwg-go.a 2>&1 | grep -E 'wgTurnOn|wgVersion' | head -20 || true
+            echo "::endgroup::"
+            exit 1
+          fi
+          echo "::notice::libwg-go.a rebuilt from source; Stealth Bind symbols present"
+
       - name: Resolve SPM
         run: xcodebuild -project WraithVPN.xcodeproj -scheme WraithVPN -resolvePackageDependencies 2>&1 | tail -5
 
@@ -95,25 +136,55 @@ jobs:
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
           APP_ID: ${{ secrets.APP_ID }}
         run: |
           set -eo pipefail
-          JWT=$(python3 ~/runner-env/asc-jwt.py 2>&1 || true)
-          if [ -z "$JWT" ] || ! echo "$JWT" | grep -q '^ey'; then
-            echo "::warning::ASC JWT generation failed, falling back to run-number-only bump"
-            BUILD_NUM=$((GITHUB_RUN_NUMBER + 400))
+
+          # Single source of truth for build-number selection across XCC + all
+          # self-hosted Mac runners (cmfmbp / chronos-macbuilder / mjolnir).
+          # Helper queries ASC for max(CFBundleVersion) on the current
+          # marketing version (preReleaseVersion train) and emits max+1, so
+          # build numbers stay strictly monotonic per-train regardless of
+          # which runner ships first.
+          #
+          # Helper requires: ASC_KEY_ID, ASC_ISSUER_ID, and either
+          # ASC_KEY_CONTENT (GH Actions secret, preferred — runner-agnostic)
+          # or ASC_KEY_PATH (per-runner file, legacy).
+          #
+          # Preferred: set ASC_KEY_CONTENT secret at the org level so any
+          # runner (existing or future) just works. Until that secret is
+          # configured, fall back to the per-runner .p8 at
+          # ~/runner-env/AuthKey_<KEY_ID>.p8.
+          if [ -z "${ASC_KEY_CONTENT:-}" ]; then
+            ASC_KEY_PATH=$(ls $HOME/runner-env/AuthKey_*.p8 2>/dev/null | head -1 || echo "")
+            export ASC_KEY_PATH
+            echo "using per-runner key: ${ASC_KEY_PATH:-<none>}"
           else
-            ASC_MAX=$(curl -s -m 10 -H "Authorization: Bearer $JWT" \
-              "https://api.appstoreconnect.apple.com/v1/builds?filter[app]=$APP_ID&sort=-uploadedDate&limit=50&fields[builds]=version" \
-              | python3 -c 'import sys,json; d=json.load(sys.stdin).get("data") or []; vs=[int((b.get("attributes") or {}).get("version") or "0") for b in d if ((b.get("attributes") or {}).get("version") or "").isdigit()]; print(max(vs) if vs else 0)' 2>/dev/null || echo 0)
-            ASC_MAX=${ASC_MAX:-0}
-            RUN_BUILD=$((GITHUB_RUN_NUMBER + 400))
-            if [ "$ASC_MAX" -ge "$RUN_BUILD" ]; then
-              BUILD_NUM=$((ASC_MAX + 1))
+            echo "using ASC_KEY_CONTENT GH Actions secret"
+          fi
+
+          # Extract the marketing-version train from pbxproj (all targets
+          # share MARKETING_VERSION; first match is canonical).
+          TRAIN=$(grep -m1 "MARKETING_VERSION = " WraithVPN.xcodeproj/project.pbxproj \
+                  | sed -E 's/.*MARKETING_VERSION = ([^;]+);.*/\1/')
+          echo "marketing train: $TRAIN"
+
+          BUILD_NUM=""
+          if { [ -n "${ASC_KEY_CONTENT:-}" ] || [ -n "${ASC_KEY_PATH:-}" ]; } && [ -n "$TRAIN" ]; then
+            if BUILD_NUM=$(python3 ci_scripts/lib/next-build-number.py \
+                            --app-id "$APP_ID" --train "$TRAIN" --floor 1 2>&1); then
+              echo "asc-resolved next build for $TRAIN: $BUILD_NUM"
             else
-              BUILD_NUM=$RUN_BUILD
+              echo "::warning::next-build-number.py failed: $BUILD_NUM"
+              BUILD_NUM=""
             fi
-            echo "asc_max=$ASC_MAX run_based=$RUN_BUILD using=$BUILD_NUM"
+          else
+            echo "::warning::ASC_KEY (content+path both missing) or TRAIN missing; helper skipped"
+          fi
+          if [ -z "$BUILD_NUM" ]; then
+            BUILD_NUM=$((GITHUB_RUN_NUMBER + 400))
+            echo "::warning::falling back to GITHUB_RUN_NUMBER+400 = $BUILD_NUM"
           fi
 
           # Restore pbxproj CURRENT_PROJECT_VERSION bump (dropped in 44c763c5)
@@ -239,15 +310,50 @@ jobs:
               -d "\$PAYLOAD" || true
           done
 
-      - name: Upload to TestFlight
+      - name: Install Ruby deps for fastlane (Ruby 3.3.x via rbenv or system)
         if: success() && github.event.inputs.skip_upload != 'true'
+        run: |
+          RUBY_BIN=""
+          if [ -x "${HOME}/.rbenv/versions/3.3.11/bin/ruby" ]; then
+            RUBY_BIN="${HOME}/.rbenv/versions/3.3.11/bin/ruby"
+          elif command -v rbenv >/dev/null 2>&1; then
+            eval "$(rbenv init - bash)"
+            RUBY_BIN="$(rbenv which ruby 2>/dev/null)"
+          fi
+          if [ -z "$RUBY_BIN" ] || [ ! -x "$RUBY_BIN" ]; then
+            RUBY_BIN="$(command -v ruby 2>/dev/null)"
+          fi
+          if [ -z "$RUBY_BIN" ] || [ ! -x "$RUBY_BIN" ]; then
+            echo "::error::Could not find Ruby 3.3.x"; exit 1
+          fi
+          export PATH="$(dirname "$RUBY_BIN"):$PATH"
+          $RUBY_BIN --version
+          $RUBY_BIN -S bundle --version || $RUBY_BIN -S gem install bundler
+          $RUBY_BIN -S bundle config set --local path 'vendor/bundle'
+          $RUBY_BIN -S bundle install --jobs 4 --retry 3 2>&1 | tail -20
+          $RUBY_BIN -S bundle exec fastlane --version 2>&1 | head -3
+          # Persist for next step
+          echo "RUBY_BIN=$RUBY_BIN" >> "$GITHUB_ENV"
+
+      - name: Upload to TestFlight (fastlane pilot)
+        if: success() && github.event.inputs.skip_upload != 'true'
+        shell: bash -eo pipefail {0}
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          FASTLANE_HIDE_CHANGELOG: 1
+          FASTLANE_SKIP_UPDATE_CHECK: 1
+          LC_ALL: en_US.UTF-8
+          LANG: en_US.UTF-8
         run: |
-          xcrun altool --upload-app -f "$EXPORT_PATH"/*.ipa -t ios \
-            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" 2>&1 | tee /tmp/altool.log | tail -20
-          grep -q "UPLOAD SUCCEEDED" /tmp/altool.log
+          export PATH="$(dirname "$RUBY_BIN"):$PATH"
+          IPA_PATH="$(ls "$EXPORT_PATH"/*.ipa | head -1)"
+          if [ -z "$IPA_PATH" ] || [ ! -f "$IPA_PATH" ]; then
+            echo "::error::No IPA found in $EXPORT_PATH"; exit 1
+          fi
+          echo "Uploading $IPA_PATH (build $BUILD_NUM) via fastlane pilot…"
+          # Tee to /tmp/altool.log so downstream notify steps' UUID grep stays compatible.
+          $RUBY_BIN -S bundle exec fastlane upload_testflight ipa:"$IPA_PATH" 2>&1 | tee /tmp/altool.log
 
       - name: Distribute to Internal Testing
         if: success() && github.event.inputs.skip_upload != 'true'

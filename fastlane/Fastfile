@@ -47,4 +47,19 @@ platform :ios do
       run_precheck_before_submit: false
     )
   end
+
+  desc "Upload an already-archived .ipa to TestFlight via pilot (replaces xcrun altool)"
+  lane :upload_testflight do |options|
+    api_key = app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_filepath: ENV["ASC_KEY_PATH"]
+    )
+    pilot(
+      api_key: api_key,
+      ipa: options[:ipa] || ENV["IPA_PATH"],
+      skip_waiting_for_build_processing: true,
+      skip_submission: true
+    )
+  end
 end
