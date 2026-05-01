@@ -95,9 +95,17 @@ jobs:
           # only refreshed when someone manually runs `make` on a Mac. That's
           # fragile — anyone touching api-apple.go / ssbind.go would otherwise
           # ship a stale .a. Build it from source on every CI run.
+
+          # The runner's default PATH doesn't include brew on Apple Silicon
+          # (/opt/homebrew/bin) or Intel (/usr/local/bin). Add both so we find
+          # whichever architecture we're running on.
+          export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:$PATH"
+
           if ! command -v go >/dev/null 2>&1; then
-            echo "::notice::go not found, installing via brew"
+            echo "::notice::go not found on PATH, installing via brew"
             brew install go
+            # Re-export PATH after install in case brew put go somewhere new.
+            eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
           fi
           go version
           cd wireguard-apple/Sources/WireGuardKitGo
