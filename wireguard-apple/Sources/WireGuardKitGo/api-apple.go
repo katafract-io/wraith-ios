@@ -85,6 +85,25 @@ func wgSetLogger(context, loggerFn uintptr) {
 
 //export wgTurnOn
 func wgTurnOn(settings *C.char, tunFd int32) int32 {
+	return wgTurnOnWithBind(settings, tunFd, conn.NewStdNetBind())
+}
+
+// wgTurnOnStealthPassthrough boots the WG device with the Stealth-mode
+// `ssBind` configured for passthrough (no SS framing yet — Phase A).
+// Used by `WireGuardAdapter.startStealthPassthrough(...)` on the Swift
+// side to validate the Bind-substitution boundary before Phase B layers
+// SS-2022 UDP framing on top.
+//
+//export wgTurnOnStealthPassthrough
+func wgTurnOnStealthPassthrough(settings *C.char, tunFd int32) int32 {
+	return wgTurnOnWithBind(settings, tunFd, newSSBindPassthrough())
+}
+
+// wgTurnOnWithBind is the shared device-construction path. Identical to the
+// historical wgTurnOn body except the caller chooses which conn.Bind to
+// install. Splitting it lets us add Stealth variants without copy-pasting
+// the tun-fd dance and handle bookkeeping.
+func wgTurnOnWithBind(settings *C.char, tunFd int32, bind conn.Bind) int32 {
 	logger := &device.Logger{
 		Verbosef: CLogger(0).Printf,
 		Errorf:   CLogger(1).Printf,
@@ -108,7 +127,7 @@ func wgTurnOn(settings *C.char, tunFd int32) int32 {
 		return -1
 	}
 	logger.Verbosef("Attaching to interface")
-	dev := device.NewDevice(tun, conn.NewStdNetBind(), logger)
+	dev := device.NewDevice(tun, bind, logger)
 
 	err = dev.IpcSet(C.GoString(settings))
 	if err != nil {

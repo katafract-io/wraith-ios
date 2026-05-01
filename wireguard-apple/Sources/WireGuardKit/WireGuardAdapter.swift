@@ -221,6 +221,53 @@ public class WireGuardAdapter {
         }
     }
 
+    /// Start the tunnel with the Stealth passthrough Bind installed.
+    ///
+    /// Identical to `start(...)` except the WireGuard backend is constructed
+    /// with the custom `ssBind` (Phase A: today the Bind just delegates to
+    /// `StdNetBind`; Phase B will replace its I/O path with SS-2022 UDP-relay
+    /// framing). Used by `WireGuardManager.attemptShadowsocksFallback` once
+    /// the substitution point is validated; today only callable from debug
+    /// menus to prove the cgo/Bind boundary works on a real device.
+    public func startStealthPassthrough(tunnelConfiguration: TunnelConfiguration, completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
+        workQueue.async {
+            guard case .stopped = self.state else {
+                completionHandler(.invalidState)
+                return
+            }
+
+            let networkMonitor = NWPathMonitor()
+            networkMonitor.pathUpdateHandler = { [weak self] path in
+                self?.didReceivePathUpdate(path: path)
+            }
+            networkMonitor.start(queue: self.workQueue)
+
+            do {
+                self.logHandler(.verbose, "Adapter start (stealth passthrough) requested")
+                let settingsGenerator = try self.makeSettingsGenerator(with: tunnelConfiguration)
+                let networkSettings = settingsGenerator.generateNetworkSettings()
+                self.logResolvedEndpoints(settingsGenerator.resolvedEndpoints, context: "startStealthPassthrough")
+                self.logNetworkSettingsSummary(networkSettings, context: "startStealthPassthrough")
+                try self.setNetworkSettings(networkSettings)
+
+                let (wgConfig, resolutionResults) = settingsGenerator.uapiConfiguration()
+                self.logEndpointResolutionResults(resolutionResults)
+
+                self.state = .started(
+                    try self.startWireGuardBackend(wgConfig: wgConfig, stealth: .passthrough),
+                    settingsGenerator
+                )
+                self.networkMonitor = networkMonitor
+                completionHandler(nil)
+            } catch let error as WireGuardAdapterError {
+                networkMonitor.cancel()
+                completionHandler(error)
+            } catch {
+                fatalError()
+            }
+        }
+    }
+
     /// Stop the tunnel.
     /// - Parameter completionHandler: completion handler.
     public func stop(completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
@@ -383,17 +430,33 @@ public class WireGuardAdapter {
         return resolvedEndpoints
     }
 
+    /// Stealth-mode variant chosen at backend start. `.off` is the historical
+    /// path (wgTurnOn → conn.NewStdNetBind). `.passthrough` is Phase A: WG
+    /// boots with the custom ssBind that today just delegates to StdNetBind,
+    /// proving the substitution point works before Phase B layers SS framing.
+    enum StealthMode {
+        case off
+        case passthrough
+    }
+
     /// Start WireGuard backend.
     /// - Parameter wgConfig: WireGuard configuration
+    /// - Parameter stealth: which Bind variant to install (default `.off`).
     /// - Throws: an error of type `WireGuardAdapterError`
     /// - Returns: tunnel handle
-    private func startWireGuardBackend(wgConfig: String) throws -> Int32 {
+    private func startWireGuardBackend(wgConfig: String, stealth: StealthMode = .off) throws -> Int32 {
         guard let tunnelFileDescriptor = self.tunnelFileDescriptor else {
             throw WireGuardAdapterError.cannotLocateTunnelFileDescriptor
         }
 
-        self.logHandler(.verbose, "Starting WireGuard backend (config bytes: \(wgConfig.utf8.count), fd: \(tunnelFileDescriptor))")
-        let handle = wgTurnOn(wgConfig, tunnelFileDescriptor)
+        self.logHandler(.verbose, "Starting WireGuard backend (config bytes: \(wgConfig.utf8.count), fd: \(tunnelFileDescriptor), stealth: \(stealth))")
+        let handle: Int32
+        switch stealth {
+        case .off:
+            handle = wgTurnOn(wgConfig, tunnelFileDescriptor)
+        case .passthrough:
+            handle = wgTurnOnStealthPassthrough(wgConfig, tunnelFileDescriptor)
+        }
         if handle < 0 {
             throw WireGuardAdapterError.startWireGuardBackend(handle)
         }

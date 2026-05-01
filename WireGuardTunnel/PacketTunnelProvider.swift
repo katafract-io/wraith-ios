@@ -61,7 +61,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             return
         }
 
-        adapter.start(tunnelConfiguration: tunnelConfiguration) { [weak self] adapterError in
+        // Phase A debug knob: the diagnostics screen flips
+        // `phaseAStealthPassthrough` in App Group UserDefaults and reconnects.
+        // When set, route `start` through `startStealthPassthrough` so the
+        // tunnel comes up with the custom ssBind installed (today the Bind
+        // just delegates to StdNetBind — pure substitution-point validation).
+        let phaseAEnabled = appGroupDefaults?.bool(forKey: "phaseAStealthPassthrough") ?? false
+        let startCompletion: (WireGuardAdapterError?) -> Void = { [weak self] adapterError in
             guard let self else {
                 writeTunnelError("startTunnel: adapter deallocated before start completed")
                 completionHandler(TunnelError.adapterDeallocated)
@@ -71,13 +77,20 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let adapterError else {
                 let interfaceName = self.adapter.interfaceName ?? "unknown"
                 appGroupDefaults?.removeObject(forKey: "lastTunnelError")
-                TunnelLog.wg(.info, "WireGuard tunnel started on interface \(interfaceName)")
+                TunnelLog.wg(.info, "WireGuard tunnel started on interface \(interfaceName) (stealthPassthrough=\(phaseAEnabled))")
                 completionHandler(nil)
                 return
             }
 
             writeTunnelError("startTunnel: adapter failed — \(adapterError.asTunnelError.localizedDescription)")
             completionHandler(adapterError.asTunnelError)
+        }
+
+        if phaseAEnabled {
+            TunnelLog.ne(.info, "startTunnel: routing through Stealth passthrough Bind (Phase A)")
+            adapter.startStealthPassthrough(tunnelConfiguration: tunnelConfiguration, completionHandler: startCompletion)
+        } else {
+            adapter.start(tunnelConfiguration: tunnelConfiguration, completionHandler: startCompletion)
         }
     }
 
