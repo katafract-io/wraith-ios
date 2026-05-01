@@ -14,6 +14,98 @@ import KatafractStyle
 
 struct MultiHopPickerSheet: View {
 
+    @EnvironmentObject var vpn:       WireGuardManager
+    @EnvironmentObject var servers:   ServerListManager
+    @EnvironmentObject var storeKit:  StoreKitManager
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        if storeKit.hasSovereign || storeKit.isFounder {
+            _MultiHopPickerContent()
+                .environmentObject(vpn)
+                .environmentObject(servers)
+        } else {
+            sovereignLockedView
+        }
+    }
+
+    private var sovereignLockedView: some View {
+        NavigationStack {
+            ZStack {
+                Color(hex: "#0d0f14").ignoresSafeArea()
+
+                VStack(spacing: KFSpacing.lg) {
+                    Spacer()
+
+                    VStack(spacing: KFSpacing.md) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 48))
+                            .foregroundStyle(Color(hex: "#f59e0b"))
+
+                        Text("Multi-Hop Routes Through 2 Countries")
+                            .font(KFFont.heading(20))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+
+                        Text("Available with Sovereign tier. Add multi-hop to your Wraith subscription for maximum privacy.")
+                            .font(KFFont.body(15))
+                            .foregroundStyle(Color.kfTextSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, KFSpacing.lg)
+
+                    Spacer()
+
+                    VStack(spacing: KFSpacing.sm) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Upgrade to Sovereign")
+                                .font(KFFont.caption(16, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color(hex: "#f59e0b"))
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Learn More")
+                                .font(KFFont.caption(16, weight: .semibold))
+                                .foregroundStyle(Color(hex: "#f59e0b"))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color(hex: "#f59e0b").opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(Color(hex: "#f59e0b").opacity(0.3), lineWidth: 1)
+                                )
+                        }
+                    }
+                    .padding(.horizontal, KFSpacing.lg)
+                    .padding(.bottom, KFSpacing.lg)
+                }
+            }
+            .navigationTitle("Multi-Hop")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(Color.kfTextMuted)
+                }
+            }
+            .toolbarBackground(Color(hex: "#0d0f14"), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .preferredColorScheme(.dark)
+        }
+    }
+}
+
+struct _MultiHopPickerContent: View {
+
     @EnvironmentObject var vpn:     WireGuardManager
     @EnvironmentObject var servers: ServerListManager
     @Environment(\.dismiss) private var dismiss
@@ -457,4 +549,3 @@ struct MultiHopPickerSheet: View {
         }
     }
 }
-
