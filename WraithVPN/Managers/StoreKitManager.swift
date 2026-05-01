@@ -198,7 +198,7 @@ final class StoreKitManager: ObservableObject {
             // Mock products for screenshots
             if ScreenshotMode.isActive {
                 if ScreenshotMode.mockSubscribed {
-                    subscription = SubscriptionInfo(plan: "enclave", expiresAt: Date(timeIntervalSinceNow: 86400 * 365), token: "mock-token")
+                    subscription = SubscriptionInfo(plan: "enclave", expiresAt: Date(timeIntervalSinceNow: 86400 * 365), token: "mock-token", isFounder: false)
                     hasPurchased = true
                 }
                 if ScreenshotMode.mockUnsubscribed {
@@ -427,13 +427,14 @@ final class StoreKitManager: ObservableObject {
         } else {
             expiresAt = nil
         }
-        subscription   = SubscriptionInfo(plan: plan, expiresAt: expiresAt, token: token)
+        let founderFlag = KeychainHelper.shared.readOptional(for: .tokenIsFounder) == "1"
+        subscription   = SubscriptionInfo(plan: plan, expiresAt: expiresAt, token: token, isFounder: founderFlag)
         hasPurchased   = !(subscription?.isExpired ?? true)
         isHavenOnly    = subscription?.isHavenOnly    ?? false
         hasDNSSettings = subscription?.hasDNSSettings ?? false
         hasVPN         = subscription?.hasVPN         ?? false
         hasMultiHop    = subscription?.hasMultiHop    ?? false
-        isFounder      = KeychainHelper.shared.readOptional(for: .tokenIsFounder) == "1"
+        isFounder      = founderFlag
         hasSovereign   = (subscription?.hasSovereign ?? false) || isFounder
         isAdmin        = KeychainHelper.shared.readOptional(for: .tokenIsAdmin)   == "1"
     }
@@ -453,13 +454,14 @@ final class StoreKitManager: ObservableObject {
             } else {
                 expiresAt = nil
             }
-            subscription = SubscriptionInfo(plan: plan, expiresAt: expiresAt, token: token)
+            let founderFlag = KeychainHelper.shared.readOptional(for: .tokenIsFounder) == "1"
+            subscription = SubscriptionInfo(plan: plan, expiresAt: expiresAt, token: token, isFounder: founderFlag)
             hasPurchased   = !(subscription?.isExpired ?? true)
             isHavenOnly    = subscription?.isHavenOnly    ?? false
             hasDNSSettings = subscription?.hasDNSSettings ?? false
             hasVPN         = subscription?.hasVPN         ?? false
             hasMultiHop    = subscription?.hasMultiHop    ?? false
-            isFounder      = KeychainHelper.shared.readOptional(for: .tokenIsFounder) == "1"
+            isFounder      = founderFlag
             hasSovereign   = (subscription?.hasSovereign ?? false) || isFounder
             isAdmin        = KeychainHelper.shared.readOptional(for: .tokenIsAdmin)   == "1"
 
