@@ -25,8 +25,10 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"net"
 	"net/netip"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -256,6 +258,9 @@ func (f *ssUDPFraming) initSession() error {
 			initErr = fmt.Errorf("ssframing: rand sessionID: %w", err)
 			return
 		}
+		if os.Getenv("WRAITH_SS_DEBUG") != "" {
+			log.Printf("[DEBUG] initSession: bootstrapping session with sessionID=%x (once-only)", sid)
+		}
 		sess, err := newSSSession(f.serverPSK, f.userPSK, sid)
 		if err != nil {
 			initErr = err
@@ -291,9 +296,7 @@ func deriveSessionSubkey(psk []byte, sessionID [8]byte) []byte {
 	material := make([]byte, len(psk)+8)
 	copy(material, psk)
 	copy(material[len(psk):], sessionID[:])
-	out := make([]byte, 32)
-	blake3.DeriveKey(out, sessionSubkeyContext, material)
-	return out
+	return blake3.DeriveKey(32, sessionSubkeyContext, material)
 }
 
 func deriveEIH(serverPSK, userPSK []byte, sessionID [8]byte) ([]byte, error) {
@@ -301,8 +304,7 @@ func deriveEIH(serverPSK, userPSK []byte, sessionID [8]byte) ([]byte, error) {
 	material := make([]byte, len(serverPSK)+8)
 	copy(material, serverPSK)
 	copy(material[len(serverPSK):], sessionID[:])
-	eihKey := make([]byte, 32)
-	blake3.DeriveKey(eihKey, identitySubkeyContext, material)
+	eihKey := blake3.DeriveKey(32, identitySubkeyContext, material)
 
 	// userIdentity = BLAKE3(userPSK)[0..16]
 	userPSKHash := blake3.Sum256(userPSK)
