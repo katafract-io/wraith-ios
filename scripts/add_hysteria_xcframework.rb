@@ -22,6 +22,13 @@ abort("target #{TARGET_NAME} not found") unless target
 # 1. PBXFileReference for the xcframework, anchored under the WraithVPN/Frameworks group
 group = project.main_group.find_subpath('WraithVPN/Frameworks', true)
 group.set_source_tree('<group>')
+# Use a filesystem-path group (path = Frameworks), not a logical name-only
+# group. Without path=, Xcode resolves children against the parent group's
+# directory (WraithVPN/), so the xcframework path collapses to
+# WraithVPN/Hysteria.xcframework and Archive errors with "no XCFramework
+# found at WraithVPN/Hysteria.xcframework". With path=Frameworks the
+# children resolve to WraithVPN/Frameworks/Hysteria.xcframework as written.
+group.set_path('Frameworks')
 
 existing = group.files.find { |f| f.path&.end_with?('Hysteria.xcframework') }
 ref = existing || group.new_file('Hysteria.xcframework')

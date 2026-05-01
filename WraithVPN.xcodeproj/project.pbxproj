@@ -356,7 +356,7 @@
 			children = (
 				8CDF9E2AB9541E47ABC369E9 /* Hysteria.xcframework */,
 			);
-			name = Frameworks;
+			path = Frameworks;
 			sourceTree = "<group>";
 		};
 		7E6FDCD9D7CA227E5DE41B2E /* UITests */ = {
