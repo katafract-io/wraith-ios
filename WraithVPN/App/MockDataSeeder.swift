@@ -8,6 +8,7 @@ import Foundation
 ///   --mock-subscribed           (force isSubscribed = true)
 ///   --mock-unsubscribed         (force unsubscribed for paywall capture)
 ///   --mock-connected            (force connection state = .connected)
+///   --mock-fallback             (force activeTransport = .shadowsocks for Stealth display)
 ///   --mock-disconnected-advanced (kill-switch / advanced view)
 ///   --mock-regions              (force exit-node region list to canonical demo set)
 ///   --mock-haven-prefs          (force Haven DNS settings = standard tier)
@@ -21,8 +22,13 @@ import Foundation
 struct MockDataSeeder {
     static func seedDataIfNeeded() {
         guard CommandLine.arguments.contains("--screenshots") else { return }
-        // TODO: wire to RegionStore / ConnectionManager / DNSStatsStore.
-        // Sample seed data per launch flag should live alongside ScreenshotMode.
-        print("MockDataSeeder: TODO — wire to WraithVPN region/connection/DNS models")
+        
+        if ScreenshotMode.mockFallback {
+            seedFallbackTransport()
+        }
+    }
+    
+    private static func seedFallbackTransport() {
+        UserDefaults.standard.set(TransportMode.shadowsocks.rawValue, forKey: "transportPreference")
     }
 }

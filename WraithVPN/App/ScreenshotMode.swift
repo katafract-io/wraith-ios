@@ -6,6 +6,7 @@
 //   --mock-unsubscribed         (force isSubscribed = false — for paywall capture)
 //   --skip-onboarding           (bypass onboarding gates)
 //   --force-onboarding          (force onboarding flow)
+//   --mock-fallback             (force activeTransport = .shadowsocks for fallback capture)
 
 import Foundation
 
@@ -20,6 +21,7 @@ enum ScreenshotMode {
     static var mockRegions: Bool { isActive && args.contains("--mock-regions") }
     static var mockHavenPrefs: Bool { isActive && args.contains("--mock-haven-prefs") }
     static var mockDnsStats: Bool { isActive && args.contains("--mock-dns-stats") }
+    static var mockFallback: Bool { isActive && args.contains("--mock-fallback") }
     static var paywallSovereignAnnual: Bool { isActive && args.contains("--paywall-sovereign-annual") }
 
     private static var args: [String] { ProcessInfo.processInfo.arguments }

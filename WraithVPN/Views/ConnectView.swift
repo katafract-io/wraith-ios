@@ -355,30 +355,11 @@ struct ConnectView: View {
                     .foregroundStyle(Color.kataChampagne.opacity(0.5))
                 }
 
-                // Stealth badge — driven by activeTransport (reality), NOT transportPreference (intent).
-                // Three visual states:
-                //   1. Live Stealth   (gold badge, "Stealth")           — activeTransport == .shadowsocks
-                //   2. Intent mismatch (amber warning, "Stealth · WG fallback")
-                //                                                       — preference says SS, reality says WG
-                //   3. Hidden          (no badge)                       — preference == reality == WG
-                // Doctrine: feedback_user_intent_sacred.md — picker shows intent; status surfaces reality.
                 if vpn.activeTransport == .shadowsocks {
-                    HStack(spacing: 4) {
-                        Image(systemName: "eye.slash")
-                            .font(.system(size: 10, weight: .semibold))
-                        Text("Stealth")
-                            .font(.kataMono(10))
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.kataGold.opacity(0.15))
-                    .foregroundStyle(Color.kataGold)
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.kataGold.opacity(0.35), lineWidth: 0.5))
-                    .transition(.scale.combined(with: .opacity))
-                    .animation(.easeInOut(duration: 0.3), value: vpn.activeTransport)
+                    TransportFallbackBadge()
+                        .transition(.scale.combined(with: .opacity))
+                        .animation(.easeInOut(duration: 0.3), value: vpn.activeTransport)
                 } else if vpn.transportPreference == .shadowsocks {
-                    // Intent says Stealth, reality says WireGuard — surface the gap honestly.
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 10, weight: .semibold))
