@@ -366,7 +366,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             let lock = NSLock()
             nonisolated(unsafe) var resumed = false
 
-            func finish(_ t: NWInterface.InterfaceType) {
+            @Sendable func finish(_ t: NWInterface.InterfaceType) {
                 lock.lock(); defer { lock.unlock() }
                 guard !resumed else { return }
                 resumed = true
