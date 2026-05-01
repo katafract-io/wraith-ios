@@ -76,11 +76,10 @@ final class HysteriaTransport {
     /// Tear down the local listener and close the Hysteria connection.
     /// Idempotent — safe to call after a failed start or twice on shutdown.
     func stop() {
-        if let c = client {
-            var err: NSError?
-            _ = c.stop(&err)
-            // Stop errors are logged but don't bubble — teardown is best-effort.
-        }
+        // gomobile's `Stop` -> `(BOOL)stop:(NSError**)error` follows Swift's
+        // canonical NSError-out-throws convention, so it auto-bridges to
+        // `throws -> Bool`. Best-effort teardown — swallow any error.
+        try? client?.stop()
         client = nil
         localEndpoint = nil
     }
