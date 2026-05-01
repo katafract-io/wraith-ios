@@ -94,6 +94,11 @@ func wgTurnOn(settings *C.char, tunFd int32) int32 {
 // side to validate the Bind-substitution boundary before Phase B layers
 // SS-2022 UDP framing on top.
 //
+// CI INVARIANT: ship.yml asserts this symbol is present in the rebuilt
+// libwg-go.a via `nm -gA out/libwg-go.a | grep wgTurnOnStealthPassthrough`.
+// Do not remove or rename without updating the workflow check and
+// wireguard.h + WireGuardAdapter.swift simultaneously.
+//
 //export wgTurnOnStealthPassthrough
 func wgTurnOnStealthPassthrough(settings *C.char, tunFd int32) int32 {
 	return wgTurnOnWithBind(settings, tunFd, newSSBindPassthrough())
