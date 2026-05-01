@@ -497,7 +497,7 @@ actor ShadowsocksTransport {
                 // readPacketObjects is callback-based; bridge to async
                 let packets: [NEPacket] = await withCheckedContinuation { continuation in
                     packetFlow.readPacketObjects { pkts in
-                        continuation.resume(returning: pkts ?? [])
+                        continuation.resume(returning: pkts)
                     }
                 }
 
@@ -825,8 +825,10 @@ actor ShadowsocksTransport {
 
     private func waitForConnectionReady(connection: NWConnection) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
+            let lock = NSLock()
+            nonisolated(unsafe) var resumed = false
             connection.stateUpdateHandler = { state in
+                lock.lock(); defer { lock.unlock() }
                 guard !resumed else { return }
                 switch state {
                 case .ready:
@@ -844,6 +846,7 @@ actor ShadowsocksTransport {
             }
             connection.start(queue: .global(qos: .userInitiated))
             DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
+                lock.lock(); defer { lock.unlock() }
                 if !resumed {
                     resumed = true
                     continuation.resume(throwing: ShadowsocksError.connectionFailed("Timeout"))
@@ -882,8 +885,10 @@ actor ShadowsocksTransport {
             // 1ms busy-poll the previous implementation degenerated into when
             // an empty-data callback fired.
             let chunk: Data = try await withCheckedThrowingContinuation { continuation in
-                var resumed = false
+                let lock = NSLock()
+                nonisolated(unsafe) var resumed = false
                 connection.receive(minimumIncompleteLength: 1, maximumLength: remaining) { data, _, isComplete, error in
+                    lock.lock(); defer { lock.unlock() }
                     guard !resumed else { return }
                     resumed = true
                     if let error = error {
