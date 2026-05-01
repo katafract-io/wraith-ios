@@ -825,7 +825,7 @@ actor ShadowsocksTransport {
 
     private func waitForConnectionReady(connection: NWConnection) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
+            nonisolated(unsafe) var resumed = false
             connection.stateUpdateHandler = { state in
                 guard !resumed else { return }
                 switch state {

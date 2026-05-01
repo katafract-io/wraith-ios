@@ -37,6 +37,7 @@ let package = Package(
                 "Makefile",
                 "out",
                 "out-macos",
+                "ssframing",
             ],
             publicHeadersPath: ".",
             linkerSettings: [
