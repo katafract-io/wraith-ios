@@ -639,16 +639,20 @@ func parseServerFrame(sess *ssSession, frame []byte) ([]byte, error) {
 	separateCT := frame[:separateHeaderSize]
 
 	// ---- Decode server's separateHeader ----
-	// Per SIP022 §UDP/multi-user, the server encrypts its response
-	// separateHeader with iPSK (the same master server PSK used by the
-	// client for outgoing packets). No bootstrapping or trial-key dance
-	// is needed — we just AES-256-ECB-decrypt with sess.serverPSK to
-	// recover the server's session_id and packet_id.
+	// CRITICAL ASYMMETRY: client→server separateHeader is encrypted with
+	// iPSK (server master PSK); server→client separateHeader is encrypted
+	// with the USER's PSK (uPSK). Per shadowsocks-rust 1.24.0
+	// crates/shadowsocks/src/relay/udprelay/aead_2022.rs line 627:
+	//   encrypt_message(context, method, key, key, dst, control.server_session_id, 0)
+	// Both ipsk and key params receive `key` = the user's PSK. Compare to
+	// line 515 (client→server) which passes `ipsk` and `key` separately.
+	// Using sess.serverPSK here was the bug that left handshake responses
+	// undecryptable on the iPhone, so WireGuard kept retransmitting init.
 	//
 	// Once we have server_session_id we cache the AEAD subkey
 	// (derived from uPSK + server_session_id) for fast-path on subsequent
 	// frames in the same server session.
-	serverSessionID, serverPacketID, err := decryptSeparateHeader(sess.serverPSK, separateCT)
+	serverSessionID, serverPacketID, err := decryptSeparateHeader(sess.userPSK, separateCT)
 	if err != nil {
 		return nil, fmt.Errorf("ssframing: parseServerFrame separateHeader: %w", err)
 	}
