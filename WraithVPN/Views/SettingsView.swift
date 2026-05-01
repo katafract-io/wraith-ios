@@ -597,7 +597,7 @@ struct SettingsView: View {
                     .frame(width: 160)
                 }
                 Text(vpn.transportPreference == .shadowsocks
-                     ? "Stealth mode tunnels traffic through an obfuscated layer to bypass deep packet inspection. Uses more battery."
+                     ? "Stealth mode tunnels WireGuard inside Hysteria 2 (QUIC) to bypass restrictive networks and deep packet inspection. Uses more battery."
                      : "WireGuard is fast, lightweight, and works in most networks.")
                     .font(KFFont.caption(11))
                     .foregroundStyle(Color.kfTextMuted)

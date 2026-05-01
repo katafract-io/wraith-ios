@@ -1,0 +1,8 @@
+framework module "Hysteria" {
+	header "ref.h"
+    header "HysHysbind.objc.h"
+    header "Universe.objc.h"
+    header "Hysteria.h"
+
+    export *
+}
