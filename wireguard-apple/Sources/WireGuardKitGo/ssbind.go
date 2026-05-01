@@ -555,7 +555,20 @@ func (f *ssUDPFraming) makeReceiveFunc(udpConn *net.UDPConn) conn.ReceiveFunc {
 // --------------------------------------------------------------------------
 
 func buildClientFrame(sess *ssSession, packetID uint64, targetIP net.IP, targetPort uint16, payload []byte) ([]byte, error) {
-	// 1. Encrypt separateHeader with iPSK (server master PSK) — SIP022 §UDP/multi-user
+	// 1. Build the plaintext separateHeader (sessionID || packetID_BE) and
+	//    take the AEAD nonce from it BEFORE encrypting. Per ss-rust 1.24
+	//    udp/aead_2022.rs encrypt_message (lines 213-237 v1.24.0) the server
+	//    derives `nonce = packet_header[4..16]` from the plaintext header
+	//    (the AES-ECB encrypt of the header happens AFTER the AEAD encrypt
+	//    of the body in their flow). Using the ciphertext as the nonce —
+	//    the prior bug here — produced "decrypt payload error" on every
+	//    packet because the GCM tag the server computed never matched.
+	plainHeader := make([]byte, 16)
+	copy(plainHeader[:8], sess.sessionID[:])
+	binary.BigEndian.PutUint64(plainHeader[8:], packetID)
+	nonce := plainHeader[4:16]
+
+	// 2. Encrypt separateHeader with iPSK (server master PSK) — SIP022 §UDP/multi-user
 	//    requires AES-256-ECB(iPSK[..32]) here. Using sessionSubkey (derived
 	//    from uPSK) was the bug that left ss-rust unable to recover the
 	//    session_id and rendered every packet "user not found" on the server.
@@ -563,9 +576,6 @@ func buildClientFrame(sess *ssSession, packetID uint64, targetIP net.IP, targetP
 	if err != nil {
 		return nil, err
 	}
-
-	// 2. AEAD key = sessionSubkey; nonce = last 12 bytes of separateCT
-	nonce := separateCT[4:16]
 
 	// 3. Build AEAD plaintext:
 	//    type(1=0x00) || timestamp(8 BE) || padding_len(2 BE=0) || ATYP+addr+port || payload
@@ -638,7 +648,7 @@ func parseServerFrame(sess *ssSession, frame []byte) ([]byte, error) {
 	// Once we have server_session_id we cache the AEAD subkey
 	// (derived from uPSK + server_session_id) for fast-path on subsequent
 	// frames in the same server session.
-	serverSessionID, _, err := decryptSeparateHeader(sess.serverPSK, separateCT)
+	serverSessionID, serverPacketID, err := decryptSeparateHeader(sess.serverPSK, separateCT)
 	if err != nil {
 		return nil, fmt.Errorf("ssframing: parseServerFrame separateHeader: %w", err)
 	}
@@ -654,8 +664,13 @@ func parseServerFrame(sess *ssSession, frame []byte) ([]byte, error) {
 	sess.mu.Unlock()
 
 	// ---- AEAD decrypt ----
-	// Server → client frame: separateCT(16) || aeadCT (no EIH from server)
-	nonce := separateCT[4:16]
+	// Server → client frame: separateCT(16) || aeadCT (no EIH from server).
+	// Nonce is derived from the PLAINTEXT separateHeader[4:16] — same rule
+	// as the client→server path (see buildClientFrame for citation).
+	plainHeader := make([]byte, 16)
+	copy(plainHeader[:8], serverSessionID[:])
+	binary.BigEndian.PutUint64(plainHeader[8:], serverPacketID)
+	nonce := plainHeader[4:16]
 	aeadCT := frame[separateHeaderSize:]
 
 	block, err := aes.NewCipher(subkey)
