@@ -208,7 +208,7 @@
 		04C7408A151052A26A9E2AA2 /* SnapshotHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WraithVPN/UITests/SnapshotHelper.swift; sourceTree = SOURCE_ROOT; };
 		0CE23FAF4173A0EE49CFEAAE /* HysteriaTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HysteriaTransport.swift; sourceTree = "<group>"; };
 		5AE810893CC4B1EF12D98611 /* ScreenshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WraithVPN/UITests/ScreenshotTests.swift; sourceTree = SOURCE_ROOT; };
-		8CDF9E2AB9541E47ABC369E9 /* Hysteria.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; path = Hysteria.xcframework; sourceTree = "<group>"; };
+		8CDF9E2AB9541E47ABC369E9 /* Hysteria.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Hysteria.xcframework; sourceTree = "<group>"; };
 		AA100001 /* WraithVPNApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WraithVPNApp.swift; sourceTree = "<group>"; };
 		AA100002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AA100003 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
