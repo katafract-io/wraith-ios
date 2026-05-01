@@ -68,6 +68,7 @@ enum RegionInfo {
         "ash":  ("Ashburn",   "🇺🇸"),
         "ewr1": ("Newark",    "🇺🇸"),
         "hil":  ("Hillsboro", "🇺🇸"),
+        "hil2": ("Hillsboro", "🇺🇸"),
         "nbg1": ("Nuremberg", "🇩🇪"),
         "hel1": ("Helsinki",  "🇫🇮"),
         "sgp2": ("Singapore", "🇸🇬"),
