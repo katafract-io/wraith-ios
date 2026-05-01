@@ -291,8 +291,9 @@ func deriveSessionSubkey(psk []byte, sessionID [8]byte) []byte {
 	material := make([]byte, len(psk)+8)
 	copy(material, psk)
 	copy(material[len(psk):], sessionID[:])
-	out := blake3.DeriveKey(sessionSubkeyContext, material)
-	return out[:32]
+	out := make([]byte, 32)
+	blake3.DeriveKey(out, sessionSubkeyContext, material)
+	return out
 }
 
 func deriveEIH(serverPSK, userPSK []byte, sessionID [8]byte) ([]byte, error) {
@@ -300,14 +301,15 @@ func deriveEIH(serverPSK, userPSK []byte, sessionID [8]byte) ([]byte, error) {
 	material := make([]byte, len(serverPSK)+8)
 	copy(material, serverPSK)
 	copy(material[len(serverPSK):], sessionID[:])
-	eihKey := blake3.DeriveKey(identitySubkeyContext, material)
+	eihKey := make([]byte, 32)
+	blake3.DeriveKey(eihKey, identitySubkeyContext, material)
 
 	// userIdentity = BLAKE3(userPSK)[0..16]
 	userPSKHash := blake3.Sum256(userPSK)
 	userIdentity := userPSKHash[:16]
 
 	// AES-256-ECB encrypt the 16-byte identity block
-	block, err := aes.NewCipher(eihKey[:32])
+	block, err := aes.NewCipher(eihKey)
 	if err != nil {
 		return nil, fmt.Errorf("ssframing: deriveEIH AES: %w", err)
 	}
