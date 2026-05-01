@@ -497,7 +497,7 @@ actor ShadowsocksTransport {
                 // readPacketObjects is callback-based; bridge to async
                 let packets: [NEPacket] = await withCheckedContinuation { continuation in
                     packetFlow.readPacketObjects { pkts in
-                        continuation.resume(returning: pkts ?? [])
+                        continuation.resume(returning: pkts)
                     }
                 }
 
@@ -825,7 +825,7 @@ actor ShadowsocksTransport {
 
     private func waitForConnectionReady(connection: NWConnection) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
+            nonisolated(unsafe) var resumed = false
             connection.stateUpdateHandler = { state in
                 guard !resumed else { return }
                 switch state {
@@ -882,7 +882,7 @@ actor ShadowsocksTransport {
             // 1ms busy-poll the previous implementation degenerated into when
             // an empty-data callback fired.
             let chunk: Data = try await withCheckedThrowingContinuation { continuation in
-                var resumed = false
+                nonisolated(unsafe) var resumed = false
                 connection.receive(minimumIncompleteLength: 1, maximumLength: remaining) { data, _, isComplete, error in
                     guard !resumed else { return }
                     resumed = true
