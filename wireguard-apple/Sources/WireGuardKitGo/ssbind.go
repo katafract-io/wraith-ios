@@ -106,6 +106,17 @@ func (b *ssBind) BatchSize() int {
 	return b.inner.BatchSize()
 }
 
+// GetOffloadInfo forwards. AmneziaWG's `conn.Bind` interface adds this method
+// (vs upstream wireguard-go) for hardware-offload diagnostics on Linux. On
+// Apple platforms the inner StdNetBind returns a zero-state string. We
+// prefix the result so the in-app log can see Stealth mode is active.
+func (b *ssBind) GetOffloadInfo() string {
+	if b.framing != nil {
+		return "ssBind(udp-relay)"
+	}
+	return "ssBind(passthrough): " + b.inner.GetOffloadInfo()
+}
+
 // --------------------------------------------------------------------------
 // ssEndpoint — fake endpoint used in Phase B
 // --------------------------------------------------------------------------
