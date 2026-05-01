@@ -33,6 +33,7 @@ let package = Package(
                 "go.mod",
                 "go.sum",
                 "api-apple.go",
+                "ssbind.go",
                 "Makefile",
                 "out",
                 "out-macos",

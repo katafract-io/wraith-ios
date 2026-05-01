@@ -38,6 +38,30 @@ private enum State {
     case temporaryShutdown(_ settingsGenerator: PacketTunnelSettingsGenerator)
 }
 
+/// Parameters for the Phase B SS-2022 UDP relay Bind.
+/// Constructed from `ShadowsocksConfig` + the resolved server IP.
+public struct ShadowsocksSSUDPParams {
+    /// Combined "SERVER_PSK:USER_PSK" base64 password (from provision API).
+    public let combinedPSK: String
+    /// ssservice relay hostname or IP (e.g. "vpn-pdx-01.vpn.katafract.com").
+    public let relayHost: String
+    /// ssservice relay UDP port (8443).
+    public let relayPort: Int32
+    /// WireGuard node public IP embedded in each SS frame target-address field.
+    public let targetIP: String
+    /// WireGuard node listen port (51820).
+    public let targetPort: Int32
+
+    public init(combinedPSK: String, relayHost: String, relayPort: Int32,
+                targetIP: String, targetPort: Int32) {
+        self.combinedPSK = combinedPSK
+        self.relayHost   = relayHost
+        self.relayPort   = relayPort
+        self.targetIP    = targetIP
+        self.targetPort  = targetPort
+    }
+}
+
 public class WireGuardAdapter {
     public typealias LogHandler = (WireGuardLogLevel, String) -> Void
 
@@ -221,6 +245,116 @@ public class WireGuardAdapter {
         }
     }
 
+    /// Start the tunnel with the Stealth passthrough Bind installed.
+    ///
+    /// Identical to `start(...)` except the WireGuard backend is constructed
+    /// with the custom `ssBind` (Phase A: today the Bind just delegates to
+    /// `StdNetBind`; Phase B will replace its I/O path with SS-2022 UDP-relay
+    /// framing). Used by `WireGuardManager.attemptShadowsocksFallback` once
+    /// the substitution point is validated; today only callable from debug
+    /// menus to prove the cgo/Bind boundary works on a real device.
+    public func startStealthPassthrough(tunnelConfiguration: TunnelConfiguration, completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
+        workQueue.async {
+            guard case .stopped = self.state else {
+                completionHandler(.invalidState)
+                return
+            }
+
+            let networkMonitor = NWPathMonitor()
+            networkMonitor.pathUpdateHandler = { [weak self] path in
+                self?.didReceivePathUpdate(path: path)
+            }
+            networkMonitor.start(queue: self.workQueue)
+
+            do {
+                self.logHandler(.verbose, "Adapter start (stealth passthrough) requested")
+                let settingsGenerator = try self.makeSettingsGenerator(with: tunnelConfiguration)
+                let networkSettings = settingsGenerator.generateNetworkSettings()
+                self.logResolvedEndpoints(settingsGenerator.resolvedEndpoints, context: "startStealthPassthrough")
+                self.logNetworkSettingsSummary(networkSettings, context: "startStealthPassthrough")
+                try self.setNetworkSettings(networkSettings)
+
+                let (wgConfig, resolutionResults) = settingsGenerator.uapiConfiguration()
+                self.logEndpointResolutionResults(resolutionResults)
+
+                self.state = .started(
+                    try self.startWireGuardBackend(wgConfig: wgConfig, stealth: .passthrough),
+                    settingsGenerator
+                )
+                self.networkMonitor = networkMonitor
+                completionHandler(nil)
+            } catch let error as WireGuardAdapterError {
+                networkMonitor.cancel()
+                completionHandler(error)
+            } catch {
+                fatalError()
+            }
+        }
+    }
+
+    /// Start the tunnel with the Phase B SS-2022 UDP relay Bind installed.
+    ///
+    /// Identical to `start(...)` except the WireGuard backend is constructed
+    /// with `ssBind` configured for real SS-2022 UDP framing. Each WG datagram
+    /// is wrapped in a Shadowsocks-2022 frame and sent to the ssservice relay
+    /// at `relayHost:relayPort` (UDP 8443). The server decapsulates the SS
+    /// frame and forwards the inner WG datagram to wg0 at `targetIP:targetPort`.
+    ///
+    /// - Parameters:
+    ///   - tunnelConfiguration: WireGuard tunnel configuration.
+    ///   - ssParams:            `ShadowsocksConfig` from the provision API response
+    ///                          (`activeShadowsocksConfig` in App Group).
+    ///   - completionHandler:   called when startup completes or fails.
+    public func startStealthUDP(
+        tunnelConfiguration: TunnelConfiguration,
+        ssParams: ShadowsocksSSUDPParams,
+        completionHandler: @escaping (WireGuardAdapterError?) -> Void
+    ) {
+        workQueue.async {
+            guard case .stopped = self.state else {
+                completionHandler(.invalidState)
+                return
+            }
+
+            let networkMonitor = NWPathMonitor()
+            networkMonitor.pathUpdateHandler = { [weak self] path in
+                self?.didReceivePathUpdate(path: path)
+            }
+            networkMonitor.start(queue: self.workQueue)
+
+            do {
+                self.logHandler(.verbose, "Adapter start (stealth UDP relay) requested — relay=\(ssParams.relayHost):\(ssParams.relayPort)")
+                let settingsGenerator = try self.makeSettingsGenerator(with: tunnelConfiguration)
+                let networkSettings = settingsGenerator.generateNetworkSettings()
+                self.logResolvedEndpoints(settingsGenerator.resolvedEndpoints, context: "startStealthUDP")
+                self.logNetworkSettingsSummary(networkSettings, context: "startStealthUDP")
+                try self.setNetworkSettings(networkSettings)
+
+                let (wgConfig, resolutionResults) = settingsGenerator.uapiConfiguration()
+                self.logEndpointResolutionResults(resolutionResults)
+
+                let mode = StealthMode.udpRelay(
+                    combinedPSK: ssParams.combinedPSK,
+                    relayHost:   ssParams.relayHost,
+                    relayPort:   ssParams.relayPort,
+                    targetIP:    ssParams.targetIP,
+                    targetPort:  ssParams.targetPort
+                )
+                self.state = .started(
+                    try self.startWireGuardBackend(wgConfig: wgConfig, stealth: mode),
+                    settingsGenerator
+                )
+                self.networkMonitor = networkMonitor
+                completionHandler(nil)
+            } catch let error as WireGuardAdapterError {
+                networkMonitor.cancel()
+                completionHandler(error)
+            } catch {
+                fatalError()
+            }
+        }
+    }
+
     /// Stop the tunnel.
     /// - Parameter completionHandler: completion handler.
     public func stop(completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
@@ -383,17 +517,44 @@ public class WireGuardAdapter {
         return resolvedEndpoints
     }
 
+    /// Stealth-mode variant chosen at backend start.
+    ///
+    /// - `.off`         — historical path (wgTurnOn → conn.NewStdNetBind).
+    /// - `.passthrough` — Phase A: custom ssBind delegates to StdNetBind.
+    ///                    Proves the substitution point works end-to-end
+    ///                    before Phase B adds SS framing.
+    /// - `.udpRelay`    — Phase B: real SS-2022 UDP relay framing. Every WG
+    ///                    datagram is wrapped in an SS-2022 frame and sent to
+    ///                    the ssservice relay endpoint at relayHost:relayPort.
+    enum StealthMode {
+        case off
+        case passthrough
+        case udpRelay(combinedPSK: String, relayHost: String, relayPort: Int32,
+                      targetIP: String, targetPort: Int32)
+    }
+
     /// Start WireGuard backend.
     /// - Parameter wgConfig: WireGuard configuration
+    /// - Parameter stealth: which Bind variant to install (default `.off`).
     /// - Throws: an error of type `WireGuardAdapterError`
     /// - Returns: tunnel handle
-    private func startWireGuardBackend(wgConfig: String) throws -> Int32 {
+    private func startWireGuardBackend(wgConfig: String, stealth: StealthMode = .off) throws -> Int32 {
         guard let tunnelFileDescriptor = self.tunnelFileDescriptor else {
             throw WireGuardAdapterError.cannotLocateTunnelFileDescriptor
         }
 
-        self.logHandler(.verbose, "Starting WireGuard backend (config bytes: \(wgConfig.utf8.count), fd: \(tunnelFileDescriptor))")
-        let handle = wgTurnOn(wgConfig, tunnelFileDescriptor)
+        self.logHandler(.verbose, "Starting WireGuard backend (config bytes: \(wgConfig.utf8.count), fd: \(tunnelFileDescriptor), stealth: \(stealth))")
+        let handle: Int32
+        switch stealth {
+        case .off:
+            handle = wgTurnOn(wgConfig, tunnelFileDescriptor)
+        case .passthrough:
+            handle = wgTurnOnStealthPassthrough(wgConfig, tunnelFileDescriptor)
+        case .udpRelay(let combinedPSK, let relayHost, let relayPort, let targetIP, let targetPort):
+            handle = wgTurnOnStealthUDP(wgConfig, tunnelFileDescriptor,
+                                        combinedPSK, relayHost, relayPort,
+                                        targetIP, targetPort)
+        }
         if handle < 0 {
             throw WireGuardAdapterError.startWireGuardBackend(handle)
         }
