@@ -145,7 +145,7 @@ func (b *hysteriaBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
 
 	if b.client != nil {
 		hysDebug("Open(port=%d): already open (gen=%d)", port, b.openGen)
-		return []conn.ReceiveFunc{b.makeReceiveFunc()}, port, nil
+		return []conn.ReceiveFunc{makeReceiveFuncFor(b.recvCh, b.endpoint)}, port, nil
 	}
 
 	hysDebug("Open(port=%d): dialing %s sni=%s target=%s", port, b.cfg.ServerAddr, b.sni, b.target)
@@ -164,14 +164,21 @@ func (b *hysteriaBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
 	}
 	hysDebug("Open: c.UDP() ok — recvLoop starting")
 
+	recvCh := make(chan hysRecv, hysRecvBufSize)
 	b.client = c
 	b.udpConn = udpConn
-	b.recvCh = make(chan hysRecv, hysRecvBufSize)
+	b.recvCh = recvCh
 	b.openGen++
+	gen := b.openGen
 	b.wg.Add(1)
-	go b.recvLoop(b.openGen)
+	// recvLoop + makeReceiveFunc must NOT re-acquire b.mu — Open still holds
+	// it via the defer above, and sync.Mutex is non-reentrant. Pass the
+	// captured udpConn/recvCh/endpoint by value instead. (build 1529 deadlocked
+	// here: Open held the lock, makeReceiveFunc tried to take it, dev.Up()
+	// hung, NE stayed in "connecting" forever.)
+	go b.recvLoop(gen, udpConn, recvCh)
 
-	return []conn.ReceiveFunc{b.makeReceiveFunc()}, port, nil
+	return []conn.ReceiveFunc{makeReceiveFuncFor(recvCh, b.endpoint)}, port, nil
 }
 
 // Close tears down the live Hysteria session and leaves the bind in a
@@ -264,16 +271,8 @@ func (b *hysteriaBind) BatchSize() int { return 1 }
 //
 // `gen` is the openGen value at the time this goroutine was started — only
 // used in log lines so that close-then-reopen cycles can be told apart.
-func (b *hysteriaBind) recvLoop(gen uint64) {
+func (b *hysteriaBind) recvLoop(gen uint64, udpConn hyclient.HyUDPConn, recvCh chan hysRecv) {
 	defer b.wg.Done()
-	b.mu.Lock()
-	udpConn := b.udpConn
-	recvCh := b.recvCh
-	b.mu.Unlock()
-	if udpConn == nil || recvCh == nil {
-		hysDebug("recvLoop[gen=%d]: udpConn or recvCh nil at start — exiting", gen)
-		return
-	}
 	hysDebug("recvLoop[gen=%d]: started", gen)
 	for {
 		data, _, err := udpConn.Receive()
@@ -300,16 +299,13 @@ func (b *hysteriaBind) recvLoop(gen uint64) {
 	}
 }
 
-// makeReceiveFunc returns the conn.ReceiveFunc that WG calls in a tight
-// loop. We capture the recvCh + endpoint at construction time so a
-// subsequent Close()→Open() cycle on the bind doesn't see a different
-// channel mid-receive (the closed channel will return ok=false and WG
-// will request a new ReceiveFunc set via Open).
-func (b *hysteriaBind) makeReceiveFunc() conn.ReceiveFunc {
-	b.mu.Lock()
-	recvCh := b.recvCh
-	endpoint := b.endpoint
-	b.mu.Unlock()
+// makeReceiveFuncFor returns the conn.ReceiveFunc that WG calls in a tight
+// loop. recvCh + endpoint are passed by the caller (Open, which holds b.mu
+// at construction time and already has these values in scope) — we deliberately
+// do NOT re-acquire b.mu here. A subsequent Close()→Open() cycle installs a
+// new recvCh + ReceiveFunc; this one will return net.ErrClosed once the
+// captured recvCh is closed and WG will request a new ReceiveFunc set.
+func makeReceiveFuncFor(recvCh chan hysRecv, endpoint *hysEndpoint) conn.ReceiveFunc {
 	return func(packets [][]byte, sizes []int, eps []conn.Endpoint) (int, error) {
 		// Honor BatchSize=1: read one packet per call.
 		select {
