@@ -14,6 +14,7 @@ import Foundation
 ///   --mock-dns-stats            (seed DNS query/block counters)
 ///   --paywall-sovereign-annual  (force paywall to land on Sovereign annual)
 struct MockDataSeeder {
+    @MainActor
     static func seedConnectedState(
         regionManager: ServerListManager,
         connectionManager: WireGuardManager,

@@ -92,11 +92,6 @@ struct DebugLogView: View {
                     }
                     .disabled(isRunningHealthCheck)
 
-                    NavigationLink(destination: DebugConformanceView()) {
-                        Label("Conformance", systemImage: "checkmark.seal")
-                            .font(.caption.weight(.medium))
-                    }
-
                     Spacer()
 
                     Button {
