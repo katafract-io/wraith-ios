@@ -22,7 +22,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -61,31 +60,45 @@ type hysRecv struct {
 
 // hysteriaBind implements conn.Bind. One per active VPN session.
 //
-// All exported state is read after Open completes; we do not support
-// concurrent Open/Close cycles — the Apple PacketTunnelProvider lifecycle
-// guarantees exactly one Open before each Close.
+// Lifecycle quirk that drove a real bug (build 1525-1528): wireguard-go's
+// device.BindUpdate ALWAYS calls bind.Close() then bind.Open() — even on
+// the very first Up(), where the bind was just installed by NewDevice.
+// Earlier revisions of this file did the QUIC dial in newHysteriaBind and
+// treated Close as terminal (one-shot atomic.Bool flip), so by the time WG
+// got around to calling Open, our bind was already torn down and Open
+// returned `bind closed`. Net effect: Send was never wired up, server saw
+// connect-then-tx:0-disconnect, no inner WG handshake ever flowed.
+//
+// Fix: defer the dial to Open. newHysteriaBind only stashes config; Open
+// dials and starts the receive pump; Close tears down and leaves the bind
+// in a state where another Open (the second of WG's close-before-open
+// dance, OR a subsequent BindUpdate triggered by listen_port change) will
+// re-dial cleanly.
 type hysteriaBind struct {
-	// Hysteria session
-	client    hyclient.Client
-	udpConn   hyclient.HyUDPConn
-	target    string // "host:port" — the WG server listener address
-	endpoint  *hysEndpoint
+	// Immutable config (set in newHysteriaBind)
+	cfg      *hyclient.Config // hysteria client config (server, auth, TLS)
+	sni      string           // for log lines
+	target   string           // "host:port" — the WG server listener
+	endpoint *hysEndpoint     // hardcoded relay endpoint
 
-	// Receive plumbing
-	recvCh   chan hysRecv
-	recvOnce sync.Once
-	closed   atomic.Bool
-	wg       sync.WaitGroup
+	// Live session — guarded by mu, all reset by Open/Close
+	mu      sync.Mutex
+	client  hyclient.Client
+	udpConn hyclient.HyUDPConn
+	recvCh  chan hysRecv
+	wg      sync.WaitGroup
+	openGen uint64 // bumped each successful Open so log lines distinguish sessions
 
-	// Diagnostic counters (atomic only — no mutex needed)
+	// Diagnostic counters (atomic only)
 	sendCount uint64
 	sendErr   uint64
 	recvCount uint64
 	recvErr   uint64
 }
 
-// newHysteriaBind dials the Hysteria 2 server, opens a UDP-relay session,
-// and returns a conn.Bind whose Send/Receive proxy through it.
+// newHysteriaBind builds a conn.Bind whose Open will dial Hysteria 2 on
+// first call. We deliberately do NOT dial here — see the lifecycle quirk
+// in the type doc above.
 //
 // server/serverPort — Hysteria 2 server (UDP/443 fleet default, 8444 pdx-02).
 // auth              — Sigil bearer token; validated server-side via /internal/hysteria/auth.
@@ -108,70 +121,93 @@ func newHysteriaBind(server string, serverPort uint16, auth, sni, wgRemote strin
 		},
 	}
 
-	hysDebug("newHysteriaBind: dial server=%s sni=%s wgRemote=%s", serverAddr, sni, wgRemote)
-	c, info, err := hyclient.NewClient(cfg)
-	if err != nil {
-		hysDebug("newHysteriaBind: NewClient err=%v", err)
-		return nil, fmt.Errorf("hysbind: NewClient: %w", err)
+	hysDebug("newHysteriaBind: cfg server=%s sni=%s wgRemote=%s (dial deferred to Open)",
+		serverAddr, sni, wgRemote)
+
+	return &hysteriaBind{
+		cfg:      cfg,
+		sni:      sni,
+		target:   wgRemote,
+		endpoint: &hysEndpoint{raw: wgRemote},
+	}, nil
+}
+
+// Open dials Hysteria 2 (if needed) and starts the receive pump. Idempotent
+// from WG's perspective: if called while already open, it just returns the
+// existing ReceiveFunc set. After Close, a subsequent Open re-dials cleanly.
+//
+// The "port" argument is irrelevant to us (we never bind a local UDP socket);
+// we echo it back for API compliance. WG only uses the returned port for its
+// internal "actual port" bookkeeping.
+func (b *hysteriaBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.client != nil {
+		hysDebug("Open(port=%d): already open (gen=%d)", port, b.openGen)
+		return []conn.ReceiveFunc{b.makeReceiveFunc()}, port, nil
 	}
-	hysDebug("newHysteriaBind: NewClient ok info=%+v", info)
+
+	hysDebug("Open(port=%d): dialing %s sni=%s target=%s", port, b.cfg.ServerAddr, b.sni, b.target)
+	c, info, err := hyclient.NewClient(b.cfg)
+	if err != nil {
+		hysDebug("Open: NewClient err=%v", err)
+		return nil, 0, fmt.Errorf("hysbind: NewClient: %w", err)
+	}
+	hysDebug("Open: NewClient ok info=%+v", info)
 
 	udpConn, err := c.UDP()
 	if err != nil {
-		hysDebug("newHysteriaBind: c.UDP() err=%v — closing client", err)
+		hysDebug("Open: c.UDP() err=%v — closing client", err)
 		_ = c.Close()
-		return nil, fmt.Errorf("hysbind: c.UDP(): %w", err)
+		return nil, 0, fmt.Errorf("hysbind: c.UDP(): %w", err)
 	}
-	hysDebug("newHysteriaBind: c.UDP() ok")
+	hysDebug("Open: c.UDP() ok — recvLoop starting")
 
-	b := &hysteriaBind{
-		client:   c,
-		udpConn:  udpConn,
-		target:   wgRemote,
-		recvCh:   make(chan hysRecv, hysRecvBufSize),
-		endpoint: &hysEndpoint{raw: wgRemote},
-	}
-	return b, nil
-}
-
-// Open is called by AmneziaWG once when the device starts. We start the
-// goroutine that pumps incoming datagrams from Hysteria into recvCh.
-//
-// The "port" argument is irrelevant to us (we never bind a local UDP
-// socket); we still echo it back for API compliance. AWG only uses the
-// returned port for its internal "actual port" book-keeping.
-func (b *hysteriaBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
-	hysDebug("Open(port=%d) closed=%v", port, b.closed.Load())
-	if b.closed.Load() {
-		return nil, 0, errors.New("hysbind: bind closed")
-	}
-
-	b.recvOnce.Do(func() {
-		b.wg.Add(1)
-		go b.recvLoop()
-	})
+	b.client = c
+	b.udpConn = udpConn
+	b.recvCh = make(chan hysRecv, hysRecvBufSize)
+	b.openGen++
+	b.wg.Add(1)
+	go b.recvLoop(b.openGen)
 
 	return []conn.ReceiveFunc{b.makeReceiveFunc()}, port, nil
 }
 
-// Close tears down the Hysteria session. Idempotent.
+// Close tears down the live Hysteria session and leaves the bind in a
+// clean state ready for another Open. Idempotent.
 func (b *hysteriaBind) Close() error {
-	if !b.closed.CompareAndSwap(false, true) {
+	b.mu.Lock()
+	gen := b.openGen
+	udpConn := b.udpConn
+	client := b.client
+	recvCh := b.recvCh
+	b.udpConn = nil
+	b.client = nil
+	b.recvCh = nil
+	b.mu.Unlock()
+
+	if client == nil {
+		hysDebug("Close: no live session")
 		return nil
 	}
-	// Closing udpConn unblocks recvLoop's Receive call.
-	if b.udpConn != nil {
-		_ = b.udpConn.Close()
+
+	hysDebug("Close: tearing down gen=%d (sendCount=%d sendErr=%d recvCount=%d recvErr=%d)",
+		gen, atomic.LoadUint64(&b.sendCount), atomic.LoadUint64(&b.sendErr),
+		atomic.LoadUint64(&b.recvCount), atomic.LoadUint64(&b.recvErr))
+
+	if udpConn != nil {
+		_ = udpConn.Close() // unblocks recvLoop's Receive
 	}
-	if b.client != nil {
-		_ = b.client.Close()
+	_ = client.Close()
+	if recvCh != nil {
+		// Drain in background so anything still queued doesn't pin memory.
+		go func(ch chan hysRecv) {
+			for range ch {
+			}
+		}(recvCh)
+		close(recvCh)
 	}
-	// Drain recvCh quickly so nothing leaks. recvLoop will exit on its own.
-	go func() {
-		for range b.recvCh {
-		}
-	}()
-	close(b.recvCh)
 	b.wg.Wait()
 	return nil
 }
@@ -186,18 +222,23 @@ func (b *hysteriaBind) SetMark(mark uint32) error { return nil }
 // Counts every send + every error for diagnostic. The first 5 calls and
 // every error are logged verbatim; after that we log only a per-1000 tick.
 func (b *hysteriaBind) Send(bufs [][]byte, ep conn.Endpoint) error {
-	if b.closed.Load() {
-		hysDebug("Send: bind closed — refusing %d bufs", len(bufs))
+	b.mu.Lock()
+	udpConn := b.udpConn
+	target := b.target
+	b.mu.Unlock()
+
+	if udpConn == nil {
+		hysDebug("Send: bind not open — refusing %d bufs", len(bufs))
 		return net.ErrClosed
 	}
 	for i, buf := range bufs {
 		n := atomic.AddUint64(&b.sendCount, 1)
 		if n <= 5 || n%1000 == 0 {
-			hysDebug("Send #%d (batch idx=%d/%d) len=%d target=%s", n, i, len(bufs), len(buf), b.target)
+			hysDebug("Send #%d (batch idx=%d/%d) len=%d target=%s", n, i, len(bufs), len(buf), target)
 		}
-		if err := b.udpConn.Send(buf, b.target); err != nil {
+		if err := udpConn.Send(buf, target); err != nil {
 			atomic.AddUint64(&b.sendErr, 1)
-			hysDebug("Send #%d ERR len=%d target=%s err=%v", n, len(buf), b.target, err)
+			hysDebug("Send #%d ERR len=%d target=%s err=%v", n, len(buf), target, err)
 			return fmt.Errorf("hysbind: Send: %w", err)
 		}
 	}
@@ -216,28 +257,42 @@ func (b *hysteriaBind) ParseEndpoint(s string) (conn.Endpoint, error) {
 func (b *hysteriaBind) BatchSize() int { return 1 }
 
 // recvLoop is the only goroutine pulling from the Hysteria UDP session.
-// It exits when Close() shuts udpConn — Receive returns an error and we
-// drop out.
-func (b *hysteriaBind) recvLoop() {
+// It captures the udpConn + recvCh from the bind under lock at start so a
+// concurrent Close() can swap b.udpConn/b.recvCh to nil without racing
+// (the captured refs stay valid until our Receive errors out, which Close
+// triggers by closing udpConn).
+//
+// `gen` is the openGen value at the time this goroutine was started — only
+// used in log lines so that close-then-reopen cycles can be told apart.
+func (b *hysteriaBind) recvLoop(gen uint64) {
 	defer b.wg.Done()
-	hysDebug("recvLoop: started")
+	b.mu.Lock()
+	udpConn := b.udpConn
+	recvCh := b.recvCh
+	b.mu.Unlock()
+	if udpConn == nil || recvCh == nil {
+		hysDebug("recvLoop[gen=%d]: udpConn or recvCh nil at start — exiting", gen)
+		return
+	}
+	hysDebug("recvLoop[gen=%d]: started", gen)
 	for {
-		data, _, err := b.udpConn.Receive()
+		data, _, err := udpConn.Receive()
 		if err != nil {
 			atomic.AddUint64(&b.recvErr, 1)
-			hysDebug("recvLoop: udpConn.Receive err=%v — exiting (recvCount=%d sendCount=%d sendErr=%d)",
-				err, atomic.LoadUint64(&b.recvCount), atomic.LoadUint64(&b.sendCount), atomic.LoadUint64(&b.sendErr))
+			hysDebug("recvLoop[gen=%d]: udpConn.Receive err=%v — exiting (recvCount=%d sendCount=%d sendErr=%d)",
+				gen, err, atomic.LoadUint64(&b.recvCount),
+				atomic.LoadUint64(&b.sendCount), atomic.LoadUint64(&b.sendErr))
 			return
 		}
 		n := atomic.AddUint64(&b.recvCount, 1)
 		if n <= 5 || n%1000 == 0 {
-			hysDebug("recvLoop: Receive #%d len=%d", n, len(data))
+			hysDebug("recvLoop[gen=%d]: Receive #%d len=%d", gen, n, len(data))
 		}
 		// Copy because Hysteria's internal buffer may be reused on next Receive.
 		cp := make([]byte, len(data))
 		copy(cp, data)
 		select {
-		case b.recvCh <- hysRecv{data: cp}:
+		case recvCh <- hysRecv{data: cp}:
 		default:
 			// Channel full → drop. Same back-pressure model as a real UDP
 			// socket overflowing its kernel rx queue, which WG handles.
@@ -245,20 +300,26 @@ func (b *hysteriaBind) recvLoop() {
 	}
 }
 
-// makeReceiveFunc returns the conn.ReceiveFunc that AWG calls in a tight
-// loop. We block (with a short timeout to allow shutdown) for the next
-// datagram, then copy it into the caller's buffer.
+// makeReceiveFunc returns the conn.ReceiveFunc that WG calls in a tight
+// loop. We capture the recvCh + endpoint at construction time so a
+// subsequent Close()→Open() cycle on the bind doesn't see a different
+// channel mid-receive (the closed channel will return ok=false and WG
+// will request a new ReceiveFunc set via Open).
 func (b *hysteriaBind) makeReceiveFunc() conn.ReceiveFunc {
+	b.mu.Lock()
+	recvCh := b.recvCh
+	endpoint := b.endpoint
+	b.mu.Unlock()
 	return func(packets [][]byte, sizes []int, eps []conn.Endpoint) (int, error) {
 		// Honor BatchSize=1: read one packet per call.
 		select {
-		case msg, ok := <-b.recvCh:
+		case msg, ok := <-recvCh:
 			if !ok {
 				return 0, net.ErrClosed
 			}
 			n := copy(packets[0], msg.data)
 			sizes[0] = n
-			eps[0] = b.endpoint
+			eps[0] = endpoint
 			return 1, nil
 		case <-time.After(250 * time.Millisecond):
 			// Periodic wake so AWG can check device-stop signals.
