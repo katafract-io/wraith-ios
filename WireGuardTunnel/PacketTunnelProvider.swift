@@ -38,11 +38,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     /// Active Shadowsocks transport (non-nil when SS fallback is running).
     private var shadowsocksTransport: ShadowsocksTransport?
 
-    /// Active Hysteria 2 transport (non-nil when Stealth-Hysteria is running).
-    /// Held for the lifetime of the session so the local UDP forwarder stays
-    /// alive while WireGuardKit pumps packets through it.
-    private var hysteriaTransport: HysteriaTransport?
-
     override func startTunnel(
         options: [String: NSObject]?,
         completionHandler: @escaping (Error?) -> Void
@@ -112,8 +107,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         }
 
         if phaseHysteriaEnabled {
-            // Hysteria 2 path: open a local UDP forwarder, rewrite the WG peer
-            // endpoint to point at it, then start the WG adapter normally.
+            // Hysteria 2 path: hand the QUIC endpoint to the unified Go runtime
+            // in libwg-go.a (hysbind.go). conn.Bind in the same Go binary as
+            // wireguard-go means one runtime, no dual-Go crash.
             guard let configData = appGroupDefaults?.data(forKey: "activeHysteriaConfig"),
                   let hysConfig = try? JSONDecoder().decode(HysteriaConfig.self, from: configData) else {
                 writeTunnelError("startTunnel: phaseHysteriaUDP enabled but activeHysteriaConfig missing — falling back to standard")
@@ -121,38 +117,17 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 adapter.start(tunnelConfiguration: tunnelConfiguration, completionHandler: startCompletion)
                 return
             }
-            let transport = HysteriaTransport()
-            let localEndpoint: String
-            do {
-                // wgRemote=127.0.0.1:51820 — every node co-locates wg0 with hysteria-server,
-                // so the server-side hysteria forwards into its own loopback wg0 listener.
-                localEndpoint = try transport.start(
-                    server:   hysConfig.server,
-                    port:     hysConfig.port,
-                    auth:     hysConfig.auth,
-                    sni:      hysConfig.sni,
-                    wgRemote: "127.0.0.1:51820"
-                )
-            } catch {
-                writeTunnelError("startTunnel: HysteriaTransport.start FAILED — \(error.localizedDescription)")
-                TunnelLog.stealth(.error, "Hysteria start failed: \(error.localizedDescription) — falling back to standard WG")
-                adapter.start(tunnelConfiguration: tunnelConfiguration, completionHandler: startCompletion)
-                return
-            }
-            // Rewrite the parsed WG configuration's peer endpoint to the local
-            // listener. WireGuardKit thinks it's talking to a normal UDP peer
-            // on loopback; hysbind picks up every datagram, wraps in QUIC,
-            // and tunnels to hysConfig.server:hysConfig.port.
-            var rewritten = tunnelConfiguration
-            if !rewritten.peers.isEmpty,
-               let local = Endpoint(from: localEndpoint) {
-                rewritten.peers[0].endpoint = local
-                TunnelLog.ne(.info, "startTunnel: Hysteria forwarder up at \(localEndpoint) → server=\(hysConfig.server):\(hysConfig.port)")
-            } else {
-                TunnelLog.ne(.error, "startTunnel: cannot rewrite peer endpoint to \(localEndpoint) — leaving as-is")
-            }
-            self.hysteriaTransport = transport
-            adapter.start(tunnelConfiguration: rewritten, completionHandler: startCompletion)
+            let hysParams = HysteriaParams(
+                server:     hysConfig.server,
+                serverPort: Int32(hysConfig.port),
+                auth:       hysConfig.auth,
+                sni:        hysConfig.sni
+                // wgRemote defaults to "127.0.0.1:51820" — every node co-locates
+                // wg0 with hysteria-server.
+            )
+            TunnelLog.ne(.info, "startTunnel: routing through Hysteria 2 conn.Bind — server=\(hysConfig.server):\(hysConfig.port)")
+            adapter.startHysteria(tunnelConfiguration: tunnelConfiguration, hysteriaParams: hysParams,
+                                   completionHandler: startCompletion)
         } else if phaseBEnabled {
             // Build SS-2022 params from the stored activeShadowsocksConfig
             guard let configData = appGroupDefaults?.data(forKey: "activeShadowsocksConfig"),
@@ -188,15 +163,6 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         completionHandler: @escaping () -> Void
     ) {
         TunnelLog.ne(.info, "stopTunnel called, reason=\(reason.rawValue)")
-
-        // Tear down Hysteria first so the local UDP forwarder closes cleanly
-        // before WG drops the loopback peer.
-        if let hys = hysteriaTransport {
-            let tx = hys.txBytes, rx = hys.rxBytes
-            TunnelLog.stealth(.info, "stopTunnel: closing Hysteria transport (tx=\(tx) rx=\(rx))")
-            hys.stop()
-            self.hysteriaTransport = nil
-        }
 
         adapter.stop { adapterError in
             if let adapterError {
