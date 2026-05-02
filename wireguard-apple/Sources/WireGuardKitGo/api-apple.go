@@ -28,9 +28,9 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"github.com/amnezia-vpn/amneziawg-go/conn"
-	"github.com/amnezia-vpn/amneziawg-go/device"
-	"github.com/amnezia-vpn/amneziawg-go/tun"
+	"golang.zx2c4.com/wireguard/conn"
+	"golang.zx2c4.com/wireguard/device"
+	"golang.zx2c4.com/wireguard/tun"
 )
 
 var loggerFunc unsafe.Pointer
@@ -167,6 +167,53 @@ func wgTurnOnStealthUDP(settings *C.char, tunFd int32,
 	return wgTurnOnWithBind(settings, tunFd, bind)
 }
 
+// wgTurnOnHysteria boots the WG device with the Hysteria-2 conn.Bind.
+// Replaces the previous gomobile-bound Hysteria.xcframework path — that
+// design carried a second Go runtime in the appex binary, which crashed
+// the extension on launch (builds 1505–1519). With hysbind.go living
+// in this same Go module, the appex has exactly one Go runtime.
+//
+// Arguments:
+//
+//	settings    — WireGuard UAPI config string (same as wgTurnOn)
+//	tunFd       — file descriptor for the tun device
+//	server      — Hysteria 2 server FQDN (also TLS SNI when sni="")
+//	serverPort  — Hysteria UDP port (443 fleet default, 8444 pdx-02 canary)
+//	auth        — Sigil bearer token; validated server-side via /internal/hysteria/auth
+//	sni         — TLS SNI override; empty string ⇒ use `server`
+//	wgRemote    — host:port the Hysteria server forwards to. Always
+//	              "127.0.0.1:51820" since wg0 is co-located with hysteria-server.
+//
+//export wgTurnOnHysteria
+func wgTurnOnHysteria(settings *C.char, tunFd int32,
+	server *C.char, serverPort int32,
+	auth *C.char, sni *C.char, wgRemote *C.char) int32 {
+
+	logger := &device.Logger{
+		Verbosef: CLogger(0).Printf,
+		Errorf:   CLogger(1).Printf,
+	}
+
+	srv := C.GoString(server)
+	sniStr := C.GoString(sni)
+	if sniStr == "" {
+		sniStr = srv
+	}
+	wgr := C.GoString(wgRemote)
+	if wgr == "" {
+		wgr = "127.0.0.1:51820"
+	}
+
+	bind, err := newHysteriaBind(srv, uint16(serverPort), C.GoString(auth), sniStr, wgr)
+	if err != nil {
+		logger.Errorf("wgTurnOnHysteria: newHysteriaBind: %v", err)
+		return -1
+	}
+
+	logger.Verbosef("wgTurnOnHysteria: server=%s:%d sni=%s target=%s", srv, serverPort, sniStr, wgr)
+	return wgTurnOnWithBind(settings, tunFd, bind)
+}
+
 // wgTurnOnWithBind is the shared device-construction path. Identical to the
 // historical wgTurnOn body except the caller chooses which conn.Bind to
 // install. Splitting it lets us add Stealth variants without copy-pasting
@@ -297,7 +344,7 @@ func wgVersion() *C.char {
 		return C.CString("unknown")
 	}
 	for _, dep := range info.Deps {
-		if dep.Path == "github.com/amnezia-vpn/amneziawg-go" {
+		if dep.Path == "golang.zx2c4.com/wireguard" {
 			parts := strings.Split(dep.Version, "-")
 			if len(parts) == 3 && len(parts[2]) == 12 {
 				return C.CString(parts[2][:7])

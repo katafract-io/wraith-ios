@@ -62,6 +62,31 @@ public struct ShadowsocksSSUDPParams {
     }
 }
 
+/// Parameters for the Hysteria 2 conn.Bind. Constructed from
+/// `HysteriaConfig` (provision API `hysteria_fallback`).
+public struct HysteriaParams {
+    /// Hysteria 2 server FQDN (also TLS SNI when `sni` is empty).
+    public let server: String
+    /// UDP port (443 fleet default, 8444 pdx-02 canary).
+    public let serverPort: Int32
+    /// Sigil bearer token. Server-validated via /internal/hysteria/auth.
+    public let auth: String
+    /// TLS SNI override; empty string ⇒ use `server`.
+    public let sni: String
+    /// "host:port" the Hysteria server forwards to (always
+    /// "127.0.0.1:51820" since wg0 is co-located with hysteria-server).
+    public let wgRemote: String
+
+    public init(server: String, serverPort: Int32, auth: String,
+                sni: String = "", wgRemote: String = "127.0.0.1:51820") {
+        self.server     = server
+        self.serverPort = serverPort
+        self.auth       = auth
+        self.sni        = sni
+        self.wgRemote   = wgRemote
+    }
+}
+
 public class WireGuardAdapter {
     public typealias LogHandler = (WireGuardLogLevel, String) -> Void
 
@@ -355,6 +380,64 @@ public class WireGuardAdapter {
         }
     }
 
+    /// Start the WG backend with the Hysteria 2 conn.Bind. Replaces the
+    /// previous gomobile-bound Hysteria.xcframework + local-loopback design,
+    /// which carried a second Go runtime in the appex and crashed on launch.
+    ///
+    /// - Parameters:
+    ///   - tunnelConfiguration: WireGuard tunnel configuration.
+    ///   - hysteriaParams:      Hysteria 2 endpoint + auth (from `activeHysteriaConfig`).
+    ///   - completionHandler:   called when startup completes or fails.
+    public func startHysteria(
+        tunnelConfiguration: TunnelConfiguration,
+        hysteriaParams: HysteriaParams,
+        completionHandler: @escaping (WireGuardAdapterError?) -> Void
+    ) {
+        workQueue.async {
+            guard case .stopped = self.state else {
+                completionHandler(.invalidState)
+                return
+            }
+
+            let networkMonitor = NWPathMonitor()
+            networkMonitor.pathUpdateHandler = { [weak self] path in
+                self?.didReceivePathUpdate(path: path)
+            }
+            networkMonitor.start(queue: self.workQueue)
+
+            do {
+                self.logHandler(.verbose, "Adapter start (Hysteria 2) requested — server=\(hysteriaParams.server):\(hysteriaParams.serverPort)")
+                let settingsGenerator = try self.makeSettingsGenerator(with: tunnelConfiguration)
+                let networkSettings = settingsGenerator.generateNetworkSettings()
+                self.logResolvedEndpoints(settingsGenerator.resolvedEndpoints, context: "startHysteria")
+                self.logNetworkSettingsSummary(networkSettings, context: "startHysteria")
+                try self.setNetworkSettings(networkSettings)
+
+                let (wgConfig, resolutionResults) = settingsGenerator.uapiConfiguration()
+                self.logEndpointResolutionResults(resolutionResults)
+
+                let mode = StealthMode.hysteria(
+                    server:     hysteriaParams.server,
+                    serverPort: hysteriaParams.serverPort,
+                    auth:       hysteriaParams.auth,
+                    sni:        hysteriaParams.sni,
+                    wgRemote:   hysteriaParams.wgRemote
+                )
+                self.state = .started(
+                    try self.startWireGuardBackend(wgConfig: wgConfig, stealth: mode),
+                    settingsGenerator
+                )
+                self.networkMonitor = networkMonitor
+                completionHandler(nil)
+            } catch let error as WireGuardAdapterError {
+                networkMonitor.cancel()
+                completionHandler(error)
+            } catch {
+                fatalError()
+            }
+        }
+    }
+
     /// Stop the tunnel.
     /// - Parameter completionHandler: completion handler.
     public func stop(completionHandler: @escaping (WireGuardAdapterError?) -> Void) {
@@ -531,6 +614,10 @@ public class WireGuardAdapter {
         case passthrough
         case udpRelay(combinedPSK: String, relayHost: String, relayPort: Int32,
                       targetIP: String, targetPort: Int32)
+        /// Hysteria 2 (current Stealth implementation). Uses the unified Go
+        /// runtime in libwg-go.a — no second xcframework, no dual Go runtime.
+        case hysteria(server: String, serverPort: Int32, auth: String,
+                      sni: String, wgRemote: String)
     }
 
     /// Start WireGuard backend.
@@ -554,6 +641,10 @@ public class WireGuardAdapter {
             handle = wgTurnOnStealthUDP(wgConfig, tunnelFileDescriptor,
                                         combinedPSK, relayHost, relayPort,
                                         targetIP, targetPort)
+        case .hysteria(let server, let serverPort, let auth, let sni, let wgRemote):
+            handle = wgTurnOnHysteria(wgConfig, tunnelFileDescriptor,
+                                      server, serverPort,
+                                      auth, sni, wgRemote)
         }
         if handle < 0 {
             throw WireGuardAdapterError.startWireGuardBackend(handle)

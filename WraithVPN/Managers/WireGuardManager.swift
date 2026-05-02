@@ -102,10 +102,9 @@ final class WireGuardManager: ObservableObject {
     /// Holds the current in-flight connect operation (provisionAndInstall or connectToServer).
     /// Allows disconnect to cancel the connect Task and force immediate teardown.
     private var connectTask: Task<Void, Error>?
-    /// Tracks whether we should engage SS fallback on the next .connected transition.
-    /// Set by connectToServer() when transportPreference==.shadowsocks, cleared after
-    /// engagement so it doesn't fire on every reconnect.
-    private var pendingShadowsocksEngagement: Bool = false
+    // (Removed 2026-05-01: pendingShadowsocksEngagement / attemptShadowsocksFallback.
+    //  Stealth now activates at adapter.start time via the phaseHysteriaUDP App Group
+    //  flag — see HysteriaTransport.swift + PacketTunnelProvider.startTunnel.)
 
     // MARK: - Phase E2.2 latency reporting + periodic Layer 2
 
@@ -280,20 +279,7 @@ final class WireGuardManager: ObservableObject {
         try? await manager?.loadFromPreferences()
         try startTunnel()
 
-        // Issue #7: Ensure activeTransport reflects the attempt — if not engaging SS,
-        // explicitly set wireguard so stale .shadowsocks values don't persist.
-        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
-            self.activeTransport = .wireguard
-            pendingShadowsocksEngagement = false
-        }
-
-        // Issue #3: Honor transportPreference on fresh connect
-        // Set a flag so syncStatus() will engage SS once the tunnel reaches .connected.
-        // This avoids the race where startTunnel() only submits the request; the NE
-        // extension isn't ready for IPC yet.
-        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
-            pendingShadowsocksEngagement = true
-        }
+        applyStealthPreferenceFlag()
     }
 
     /// Phase F — region-first connect.
@@ -393,25 +379,11 @@ final class WireGuardManager: ObservableObject {
         try? await manager?.loadFromPreferences()
         try startTunnel()
 
-        // Persist Shadowsocks fallback config + exit IP to App Group (mirrors connectToServer)
-        if let ssConfig = provision.shadowsocksFallback,
-           let encoded = try? JSONEncoder().encode(ssConfig) {
-            appGroupDefaults?.set(encoded, forKey: "activeShadowsocksConfig")
-        } else {
-            appGroupDefaults?.removeObject(forKey: "activeShadowsocksConfig")
-        }
+        persistStealthFallback(provision: provision)
         if let ip = exitIP {
             appGroupDefaults?.set(ip, forKey: "wgExitIP")
         }
-
-        // Issue #7/#3: reflect transport preference + flag SS engagement after .connected
-        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
-            self.activeTransport = .wireguard
-            pendingShadowsocksEngagement = false
-        }
-        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
-            pendingShadowsocksEngagement = true
-        }
+        applyStealthPreferenceFlag()
     }
 
     /// Foreground-triggered Layer 2 probe. Called when the app returns from
@@ -616,16 +588,7 @@ final class WireGuardManager: ObservableObject {
         await applyOnDemand(autoConnectEnabled)
         try? await manager?.loadFromPreferences()
 
-        // Honor transportPreference: set flag so postConnectHealthCheck fires SS engagement
-        // once WG handshake confirms healthy (matches connectToServer/connectToRegion pattern)
-        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
-            self.activeTransport = .wireguard
-            pendingShadowsocksEngagement = false
-        }
-        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
-            pendingShadowsocksEngagement = true
-        }
-
+        applyStealthPreferenceFlag()
         try startTunnel()
     }
 
@@ -685,15 +648,7 @@ final class WireGuardManager: ObservableObject {
         // One extra load after the save so the connection object is fresh.
         try? await manager?.loadFromPreferences()
 
-        // Honor transportPreference: set flag so postConnectHealthCheck fires SS engagement
-        // once WG handshake confirms healthy (matches connectToServer/connectToRegion pattern)
-        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
-            self.activeTransport = .wireguard
-            pendingShadowsocksEngagement = false
-        }
-        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
-            pendingShadowsocksEngagement = true
-        }
+        applyStealthPreferenceFlag()
 
         do {
             try startTunnel()
@@ -712,15 +667,7 @@ final class WireGuardManager: ObservableObject {
             await applyOnDemand(autoConnectEnabled)
             try? await manager?.loadFromPreferences()
 
-            // Honor transportPreference: set flag so postConnectHealthCheck fires SS engagement
-            // once WG handshake confirms healthy (same pattern as primary connect path)
-            if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
-                self.activeTransport = .wireguard
-                pendingShadowsocksEngagement = false
-            }
-            if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
-                pendingShadowsocksEngagement = true
-            }
+            applyStealthPreferenceFlag()
 
             try startTunnel()
         }
@@ -808,43 +755,58 @@ final class WireGuardManager: ObservableObject {
 
         DebugLogger.shared.stealth("setTransportMode: change requested → \(mode.rawValue) (current activeTransport=\(activeTransport.rawValue))")
 
-        // If switching to Shadowsocks, set the engagement flag + reconnect.
-        // postConnectHealthCheck will fire attemptShadowsocksFallback() once WG is verified healthy.
-        if mode == .shadowsocks {
-            // Verify SS config available before triggering reconnect
-            guard appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil else {
-                DebugLogger.shared.stealth("Stealth toggle: no activeShadowsocksConfig in App Group; aborting (preference kept; will retry on next reconnect)")
-                status = .failed("Stealth unavailable — peer not provisioned with SS fallback; preference kept as Stealth, will retry on next reconnect")
-                activeTransport = .wireguard
-                return
-            }
-            pendingShadowsocksEngagement = true
-            DebugLogger.shared.stealth("Reconnecting to gate Stealth engagement on healthy WG…")
-            manager?.connection.stopVPNTunnel()
-            // Same poll-until-disconnected pattern as the WG path (Issue #2)
-            for _ in 0..<20 {
-                try? await Task.sleep(for: .milliseconds(100))
-                let s = manager?.connection.status
-                if s == .disconnected || s == .invalid { break }
-            }
-            try? startTunnel()
+        // Stealth (Hysteria 2) requires hysteria_fallback in the provision response.
+        // If it's missing (old provision from before the migration), surface that
+        // explicitly — the user needs to disconnect and reconnect to get a fresh
+        // provision with the hysteria_fallback block.
+        if mode == .shadowsocks, appGroupDefaults?.data(forKey: "activeHysteriaConfig") == nil {
+            DebugLogger.shared.stealth("Stealth toggle: no activeHysteriaConfig in App Group — needs fresh provision")
+            status = .failed("Stealth needs a fresh provision. Disconnect, then reconnect to enable Stealth.")
+            activeTransport = .wireguard
             return
         }
 
-        // If switching to WireGuard, reconnect by dropping and restarting the tunnel.
-        // This gives WireGuard priority but keeps SS available as fallback if UDP is blocked.
-        DebugLogger.shared.wg("Reconnecting to try WireGuard transport…")
+        applyStealthPreferenceFlag()
+        DebugLogger.shared.stealth("Reconnecting to apply transport=\(mode.rawValue)…")
         manager?.connection.stopVPNTunnel()
-        // Issue #2: Poll until disconnected instead of fixed sleep (NE teardown is load-dependent)
         for _ in 0..<20 {
             try? await Task.sleep(for: .milliseconds(100))
             let s = manager?.connection.status
             if s == .disconnected || s == .invalid { break }
         }
         try? startTunnel()
+    }
 
-        // Issue #7: Reset activeTransport to wireguard after successful reconnect
-        self.activeTransport = .wireguard
+    // MARK: - Stealth (Hysteria 2)
+
+    /// Persist the Stealth fallback configs received from `/v1/peers/provision`
+    /// to App Group UserDefaults so the WireGuardTunnel extension can read them
+    /// at startTunnel time. Hysteria is the live transport; the legacy SS blob
+    /// is kept for one release as a no-op compatibility key.
+    private func persistStealthFallback(provision: ProvisionResponse) {
+        if let hys = provision.hysteriaFallback,
+           let encoded = try? JSONEncoder().encode(hys) {
+            appGroupDefaults?.set(encoded, forKey: "activeHysteriaConfig")
+        } else {
+            appGroupDefaults?.removeObject(forKey: "activeHysteriaConfig")
+        }
+        if let ss = provision.shadowsocksFallback,
+           let encoded = try? JSONEncoder().encode(ss) {
+            appGroupDefaults?.set(encoded, forKey: "activeShadowsocksConfig")
+        } else {
+            appGroupDefaults?.removeObject(forKey: "activeShadowsocksConfig")
+        }
+    }
+
+    /// Mirror `transportPreference` to the App Group flag the network extension
+    /// reads at startTunnel time. Gated on `activeHysteriaConfig` so missing
+    /// config silently degrades to plain WG instead of failing the connect.
+    private func applyStealthPreferenceFlag() {
+        let stealthRequested = (transportPreference == .shadowsocks)
+        let configReady      = appGroupDefaults?.data(forKey: "activeHysteriaConfig") != nil
+        let engage           = stealthRequested && configReady
+        appGroupDefaults?.set(engage, forKey: "phaseHysteriaUDP")
+        self.activeTransport = engage ? .shadowsocks : .wireguard
     }
 
     /// Revokes all active peers (single-hop or multi-hop) and removes the local profile.
@@ -889,18 +851,10 @@ final class WireGuardManager: ObservableObject {
                 TelemetryManager.shared.sessionStarted(nodeId: server.nodeId, connection: session)
             }
 
-            // Issue #3 fix: Gate SS engagement on confirmed healthy WG (handshake succeeded)
-            // instead of on bare .connected transition. Engage only once per connect cycle.
-            if pendingShadowsocksEngagement {
-                pendingShadowsocksEngagement = false
-                DebugLogger.shared.stealth("postConnectHealthCheck: WG healthy + pendingShadowsocksEngagement=true → firing attemptShadowsocksFallback()")
-                Task { await self.attemptShadowsocksFallback() }
-            } else if transportPreference == .shadowsocks {
-                // Stealth requested but no engagement queued. This shouldn't happen if
-                // connect paths set the flag correctly — log it loudly so we catch any
-                // future regression like PR #47's missing entry points.
-                DebugLogger.shared.stealth("postConnectHealthCheck: WARNING — transportPreference=.shadowsocks but pendingShadowsocksEngagement=false. Stealth will NOT engage. Likely a connect-path regression.")
-            }
+            // (Removed 2026-05-01: post-connect SS engagement. Stealth now
+            //  activates at adapter.start time via phaseHysteriaUDP — there is
+            //  nothing to do here for Stealth since the tunnel is already
+            //  running on Hysteria if the user requested it.)
             return
         }
 
@@ -924,20 +878,17 @@ final class WireGuardManager: ObservableObject {
         defer { isProvisioning = false }
         reprovisionAttempts += 1
 
-        // Attempt 1: try Shadowsocks fallback if a config is available; otherwise
-        // fall back to the original soft-reconnect path (restart tunnel, same peer).
+        // Attempt 1: soft reconnect (restart tunnel, same peer). The legacy SS
+        // path is gone — Stealth (Hysteria 2) is now decided at adapter.start
+        // time via phaseHysteriaUDP, so a soft reconnect that flips the flag
+        // is the correct response to UDP being blocked. The user toggling
+        // Stealth in Settings is a separate path that goes through
+        // setTransportMode → applyStealthPreferenceFlag → reconnect.
         if reprovisionAttempts == 1 {
-            if appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
-                DebugLogger.shared.wg("Health check FAILED: UDP blocked — attempting SS fallback (attempt 1/\(maxReprovisionAttempts))...")
-                await attemptShadowsocksFallback()
-                return
-            }
             DebugLogger.shared.wg("Health check FAILED: trying soft reconnect (attempt 1/\(maxReprovisionAttempts))...")
             manager?.connection.stopVPNTunnel()
             try? await Task.sleep(for: .milliseconds(1500))
             try? startTunnel()
-            // The next .connected event triggers another health check.
-            // If it still fails, reprovisionAttempts will be 2 → full reprovision.
             return
         }
 
@@ -979,119 +930,6 @@ final class WireGuardManager: ObservableObject {
         } catch {
             DebugLogger.shared.wg("Auto-reprovision FAILED: \(error.localizedDescription)")
             status = .failed("Tunnel dead, re-provision failed: \(error.localizedDescription)")
-        }
-    }
-
-    // MARK: - Shadowsocks fallback
-
-    /// Instructs the WireGuardTunnel extension to switch to Shadowsocks transport.
-    /// The extension reads `activeShadowsocksConfig` from App Group UserDefaults and
-    /// starts ShadowsocksTransport inline. Called when WG health check fails OR when
-    /// the user has `transportPreference == .shadowsocks` (Stealth requested).
-    ///
-    /// Bug C instrumentation: every gate is logged so the next failed engagement
-    /// leaves a forensic trail (TestFlight build 1456 saw zero SS connections
-    /// server-side despite badge claiming Stealth — see
-    /// `project_wraith_ios_ui_truth_bugs_2026_04_29.md`).
-    private func attemptShadowsocksFallback() async {
-        DebugLogger.shared.stealth("attemptShadowsocksFallback ENTRY: pendingFlag=\(pendingShadowsocksEngagement) transportPref=\(transportPreference.rawValue) activeTransport=\(activeTransport.rawValue) status=\(status.label)")
-
-        // Pre-flight: SS config must be in App Group for the extension to read.
-        let configBlobLen = appGroupDefaults?.data(forKey: "activeShadowsocksConfig")?.count ?? 0
-        guard configBlobLen > 0 else {
-            DebugLogger.shared.stealth("ABORT (cause=missing-config): App Group SS config blob length=0 — provision response likely lacked shadowsocks_fallback")
-            // Surface to user — Stealth was requested but cannot engage.
-            // Per feedback_user_intent_sacred.md: PRESERVE transportPreference (intent)
-            // but reflect reality. activeTransport stays .wireguard.
-            status = .failed("Stealth unreachable: server did not provision SS fallback. Tunnel still on WireGuard.")
-            return
-        }
-        DebugLogger.shared.stealth("App Group SS config blob length=\(configBlobLen), parsed successfully")
-
-        guard let session = tunnelProviderSession else {
-            DebugLogger.shared.stealth("ABORT (cause=no-session): tunnelProviderSession is nil — NE manager not loaded or tunnel not running")
-            // Don't touch user's preference; surface failure clearly.
-            status = .failed("Stealth unreachable: tunnel session not available.")
-            await restartWireGuardAfterSSFailure(reason: "no tunnel session")
-            return
-        }
-        DebugLogger.shared.stealth("IPC start: sending 0x01 (switch to SS) to tunnel extension")
-
-        // Message byte 1 = "switch to SS fallback"
-        let message = Data([0x01])
-        do {
-            let reply = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
-                do {
-                    try session.sendProviderMessage(message) { data in
-                        continuation.resume(returning: data)
-                    }
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-            let replyByte = reply?.first.map { String(format: "0x%02x", $0) } ?? "nil"
-            DebugLogger.shared.stealth("IPC end: extension reply=\(replyByte) bytes=\(reply?.count ?? 0)")
-            if let reply, reply.first == 0x01 {
-                DebugLogger.shared.stealth("extension confirmed transport switch — activeTransport=.shadowsocks")
-                activeTransport = .shadowsocks
-                status = .connected  // optimistic; will re-health-check on next cycle
-            } else {
-                DebugLogger.shared.stealth("ABORT (cause=ext-reply-nonsuccess): extension returned non-0x01 — transport.start likely failed inside extension; check 'ext'-tagged Stealth lines for underlying cause")
-                // Surface to the user that Stealth didn't engage.
-                status = .failed("Stealth unreachable: tunnel extension could not start SS transport. On WireGuard.")
-                await restartWireGuardAfterSSFailure(reason: "extension reply != 0x01")
-            }
-        } catch {
-            DebugLogger.shared.stealth("ABORT (cause=ipc-throw): sendProviderMessage threw — \(error.localizedDescription)")
-            status = .failed("Stealth unreachable: IPC error — \(error.localizedDescription)")
-            await restartWireGuardAfterSSFailure(reason: "IPC threw: \(error.localizedDescription)")
-        }
-    }
-
-    /// Recovery helper: restarts the WireGuard adapter when Shadowsocks fallback fails.
-    /// Sends IPC message 0x02 to the extension to restart WG adapter, ensuring the user
-    /// retains connectivity even when Stealth mode cannot engage.
-    ///
-    /// Bug C: this DOES NOT clear `transportPreference`. Per
-    /// `feedback_user_intent_sacred.md`, intent is sacred — failures update reality
-    /// (`activeTransport`, `status`) but leave the user's picker choice alone, so
-    /// the next reconnect retries Stealth and the badge shows the warning state.
-    private func restartWireGuardAfterSSFailure(reason: String = "unknown") async {
-        DebugLogger.shared.stealth("status updated to .failed(...) — SS engagement failed (reason=\(reason)); restarting WG adapter; transportPreference=\(transportPreference.rawValue) (preserved per user-intent doctrine)")
-        activeTransport = .wireguard
-
-        guard let session = tunnelProviderSession else {
-            DebugLogger.shared.stealth("Cannot restart WG: no tunnel session available")
-            status = .failed("Stealth mode unavailable. Direct WireGuard restart failed.")
-            return
-        }
-
-        // Message byte 2 = "restart WireGuard adapter"
-        let message = Data([0x02])
-        do {
-            let reply = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data?, Error>) in
-                do {
-                    try session.sendProviderMessage(message) { data in
-                        continuation.resume(returning: data)
-                    }
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-            if let reply, reply.first == 0x01 {
-                DebugLogger.shared.stealth("WG restart: extension confirmed adapter restart")
-                // Status was set to .failed by the caller with a Stealth-specific
-                // message. The badge state (transportPreference != activeTransport)
-                // already conveys the gap; promoting back to .connected lets the
-                // tunnel be marked usable while the warning badge stays visible.
-                status = .connected
-            } else {
-                DebugLogger.shared.stealth("WG restart: unexpected reply from extension")
-                status = .failed("Stealth mode unavailable. WireGuard restart failed.")
-            }
-        } catch {
-            DebugLogger.shared.stealth("WG restart: IPC error — \(error.localizedDescription)")
-            status = .failed("Stealth mode unavailable. WireGuard restart failed.")
         }
     }
 
@@ -1176,14 +1014,9 @@ final class WireGuardManager: ObservableObject {
         } catch {
             DebugLogger.shared.peer("CRITICAL: Keychain save failed for peerId=\(provision.peerId): \(error.localizedDescription)")
         }
-        // Persist Shadowsocks fallback config + exit IP to App Group UserDefaults so the
+        // Persist Stealth fallback config + exit IP to App Group UserDefaults so the
         // WireGuardTunnel extension can read them without a Keychain access-group.
-        if let ssConfig = provision.shadowsocksFallback,
-           let encoded = try? JSONEncoder().encode(ssConfig) {
-            appGroupDefaults?.set(encoded, forKey: "activeShadowsocksConfig")
-        } else {
-            appGroupDefaults?.removeObject(forKey: "activeShadowsocksConfig")
-        }
+        persistStealthFallback(provision: provision)
         if let ip = exitIP {
             appGroupDefaults?.set(ip, forKey: "wgExitIP")
         }
@@ -1230,25 +1063,12 @@ final class WireGuardManager: ObservableObject {
         } catch {
             DebugLogger.shared.peer("CRITICAL: Keychain save failed for peerId=\(provision.peerId) (switch): \(error.localizedDescription)")
         }
-        // Persist Shadowsocks fallback config + exit IP to App Group (mirrors provisionAndInstall)
-        if let ssConfig = provision.shadowsocksFallback,
-           let encoded = try? JSONEncoder().encode(ssConfig) {
-            appGroupDefaults?.set(encoded, forKey: "activeShadowsocksConfig")
-        } else {
-            appGroupDefaults?.removeObject(forKey: "activeShadowsocksConfig")
-        }
+        // Persist Stealth fallback config + exit IP to App Group (mirrors provisionAndInstall)
+        persistStealthFallback(provision: provision)
         if let ip = exitIP {
             appGroupDefaults?.set(ip, forKey: "wgExitIP")
         }
-
-        // Issue #7/#3: reflect transport preference + flag SS engagement after .connected
-        if transportPreference != .shadowsocks || appGroupDefaults?.data(forKey: "activeShadowsocksConfig") == nil {
-            self.activeTransport = .wireguard
-            pendingShadowsocksEngagement = false
-        }
-        if transportPreference == .shadowsocks, appGroupDefaults?.data(forKey: "activeShadowsocksConfig") != nil {
-            pendingShadowsocksEngagement = true
-        }
+        applyStealthPreferenceFlag()
     }
 
     /// Resolves a provisioned `node_id` to the canonical `VPNServer` metadata.

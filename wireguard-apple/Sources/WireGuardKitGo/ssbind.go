@@ -33,7 +33,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/amnezia-vpn/amneziawg-go/conn"
+	"golang.zx2c4.com/wireguard/conn"
 	"lukechampine.com/blake3"
 )
 
@@ -108,15 +108,15 @@ func (b *ssBind) BatchSize() int {
 	return b.inner.BatchSize()
 }
 
-// GetOffloadInfo forwards. AmneziaWG's `conn.Bind` interface adds this method
-// (vs upstream wireguard-go) for hardware-offload diagnostics on Linux. On
-// Apple platforms the inner StdNetBind returns a zero-state string. We
-// prefix the result so the in-app log can see Stealth mode is active.
+// GetOffloadInfo is no longer part of vanilla wireguard-go's conn.Bind
+// interface (it was AWG-only). Kept as a non-interface method so the Swift
+// wgGetConfig path can still call it; vanilla bind users just get the static
+// label.
 func (b *ssBind) GetOffloadInfo() string {
 	if b.framing != nil {
 		return "ssBind(udp-relay)"
 	}
-	return "ssBind(passthrough): " + b.inner.GetOffloadInfo()
+	return "ssBind(passthrough)"
 }
 
 // --------------------------------------------------------------------------

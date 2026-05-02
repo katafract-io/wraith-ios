@@ -32,6 +32,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             // WireGuard kernel-level log lines stay raw on os.log only —
             // they're high-frequency and would dominate the in-app buffer.
             log.log(level: logLevel.osLogType, "\(message, privacy: .public)")
+            // Bring-up debug: any line tagged "[hysbind]" by the Go-side
+            // diagnostic instrumentation also lands in the exported in-app
+            // debug log. Drop the special-case once Hysteria 2 data plane
+            // is verified end-to-end.
+            if message.contains("[hysbind]") {
+                TunnelLog.ne(.info, message)
+            }
         }
     }()
 
@@ -75,6 +82,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // Requires `activeShadowsocksConfig` to be present in App Group.
         let phaseBEnabled = appGroupDefaults?.bool(forKey: "phaseBStealthUDP") ?? false
 
+        // Hysteria 2 stealth: replaces SS+v2ray-plugin entirely. When set,
+        // start a local UDP forwarder backed by Hysteria 2 QUIC and rewrite
+        // the WG peer endpoint to point at it. Requires `activeHysteriaConfig`
+        // in App Group. See HysteriaTransport.swift for the architecture note.
+        let phaseHysteriaEnabled = appGroupDefaults?.bool(forKey: "phaseHysteriaUDP") ?? false
+
         let startCompletion: (WireGuardAdapterError?) -> Void = { [weak self] adapterError in
             guard let self else {
                 writeTunnelError("startTunnel: adapter deallocated before start completed")
@@ -85,7 +98,12 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let adapterError else {
                 let interfaceName = self.adapter.interfaceName ?? "unknown"
                 appGroupDefaults?.removeObject(forKey: "lastTunnelError")
-                let tag = phaseBEnabled ? "stealthUDP" : (phaseAEnabled ? "stealthPassthrough" : "standard")
+                let tag: String = {
+                    if phaseHysteriaEnabled { return "stealthHysteria" }
+                    if phaseBEnabled        { return "stealthUDP" }
+                    if phaseAEnabled        { return "stealthPassthrough" }
+                    return "standard"
+                }()
                 TunnelLog.wg(.info, "WireGuard tunnel started on interface \(interfaceName) (\(tag))")
                 completionHandler(nil)
                 return
@@ -95,7 +113,29 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(adapterError.asTunnelError)
         }
 
-        if phaseBEnabled {
+        if phaseHysteriaEnabled {
+            // Hysteria 2 path: hand the QUIC endpoint to the unified Go runtime
+            // in libwg-go.a (hysbind.go). conn.Bind in the same Go binary as
+            // wireguard-go means one runtime, no dual-Go crash.
+            guard let configData = appGroupDefaults?.data(forKey: "activeHysteriaConfig"),
+                  let hysConfig = try? JSONDecoder().decode(HysteriaConfig.self, from: configData) else {
+                writeTunnelError("startTunnel: phaseHysteriaUDP enabled but activeHysteriaConfig missing — falling back to standard")
+                TunnelLog.ne(.error, "startTunnel: phaseHysteriaUDP requires activeHysteriaConfig — falling back to standard WG")
+                adapter.start(tunnelConfiguration: tunnelConfiguration, completionHandler: startCompletion)
+                return
+            }
+            let hysParams = HysteriaParams(
+                server:     hysConfig.server,
+                serverPort: Int32(hysConfig.port),
+                auth:       hysConfig.auth,
+                sni:        hysConfig.sni
+                // wgRemote defaults to "127.0.0.1:51820" — every node co-locates
+                // wg0 with hysteria-server.
+            )
+            TunnelLog.ne(.info, "startTunnel: routing through Hysteria 2 conn.Bind — server=\(hysConfig.server):\(hysConfig.port)")
+            adapter.startHysteria(tunnelConfiguration: tunnelConfiguration, hysteriaParams: hysParams,
+                                   completionHandler: startCompletion)
+        } else if phaseBEnabled {
             // Build SS-2022 params from the stored activeShadowsocksConfig
             guard let configData = appGroupDefaults?.data(forKey: "activeShadowsocksConfig"),
                   let ssConfig = try? JSONDecoder().decode(ShadowsocksConfig.self, from: configData) else {
