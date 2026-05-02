@@ -104,7 +104,7 @@ final class WireGuardManager: ObservableObject {
     private var connectTask: Task<Void, Error>?
     // (Removed 2026-05-01: pendingShadowsocksEngagement / attemptShadowsocksFallback.
     //  Stealth now activates at adapter.start time via the phaseHysteriaUDP App Group
-    //  flag — see HysteriaTransport.swift + PacketTunnelProvider.startTunnel.)
+    //  flag — see hysbind.go / wgTurnOnHysteria + PacketTunnelProvider.startTunnel.)
 
     // MARK: - Phase E2.2 latency reporting + periodic Layer 2
 

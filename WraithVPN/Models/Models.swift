@@ -131,7 +131,7 @@ struct ShadowsocksConfig: Codable, Equatable {
 /// Transport carrying user traffic. The `.shadowsocks` case name is kept for
 /// backwards compatibility (UserDefaults values, App Group keys), but the
 /// underlying implementation switched from SS-2022+v2ray-plugin to Hysteria 2
-/// on 2026-05-01 — see HysteriaTransport.swift. User-visible label is
+/// on 2026-05-01 — see hysbind.go / wgTurnOnHysteria. User-visible label is
 /// "Stealth (Hysteria 2)".
 enum TransportMode: String, Codable, CaseIterable {
     case wireguard
@@ -140,7 +140,7 @@ enum TransportMode: String, Codable, CaseIterable {
 
 /// Hysteria 2 fallback config block returned by `/v1/peers/provision`.
 /// The iOS extension uses this to start a local UDP forwarder and rewrite
-/// the WireGuard peer endpoint to point at it. See HysteriaTransport.swift.
+/// the WireGuard peer endpoint to point at it. See hysbind.go / wgTurnOnHysteria.
 struct HysteriaConfig: Codable, Equatable {
     let server: String   // FQDN, e.g. "vpn-pdx-02.vpn.katafract.com"
     let port: Int        // 443 fleet default, 8444 pdx-02 canary

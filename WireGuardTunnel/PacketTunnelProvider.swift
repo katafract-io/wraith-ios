@@ -85,7 +85,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         // Hysteria 2 stealth: replaces SS+v2ray-plugin entirely. When set,
         // start a local UDP forwarder backed by Hysteria 2 QUIC and rewrite
         // the WG peer endpoint to point at it. Requires `activeHysteriaConfig`
-        // in App Group. See HysteriaTransport.swift for the architecture note.
+        // in App Group. Architecture: hysbind.go (wgTurnOnHysteria Go binding).
         let phaseHysteriaEnabled = appGroupDefaults?.bool(forKey: "phaseHysteriaUDP") ?? false
 
         let startCompletion: (WireGuardAdapterError?) -> Void = { [weak self] adapterError in
