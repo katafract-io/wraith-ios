@@ -1,5 +1,50 @@
 # Katafract screenshot pipeline — fastlane lanes
-# Doctrine: feedback_screenshots_never_manual.md — every UI change auto-refreshes.
+# Doctrine: feedback_screenshots_never_manual.md + feedback_validate_one_png_before_long_watcher.md
+# Safety: never let a 0-PNG run wipe ASC.
+
+require 'snapshot/test_command_generator'
+# Use root-namespace `::Snapshot` — inside Fastfile, bare `Snapshot` resolves
+# under `Fastlane::FastFile::` and would create a different (empty) constant.
+# Reopen the existing class without restating its parent (Ruby reopens cleanly).
+class ::Snapshot::TestCommandGenerator
+  class << self
+    def destination(devices)
+      devices = [devices] unless devices.is_a?(Array)
+      os = case devices.first.to_s
+           when /^Apple TV/ then 'tvOS'
+           when /^Apple Watch/ then 'watchOS'
+           else 'iOS'
+           end
+      os_version = ::Snapshot.config[:ios_version] || ::Snapshot::LatestOsVersion.version(os)
+      destinations = devices.map do |d|
+        device = find_device(d, os_version)
+        FastlaneCore::UI.user_error!("No device found named '#{d}' (os_version=#{os_version})") if device.nil?
+        FastlaneCore::UI.message("UDID-patched destination: #{device.name} (#{device.os_version}) udid=#{device.udid}")
+        # Use UDID instead of name+OS — bypasses runtime ambiguity when multiple
+        # builds of the same major.minor iOS runtime are installed.
+        "-destination 'platform=#{os} Simulator,id=#{device.udid}'"
+      end
+      [destinations.join(' ')]
+    end
+  end
+end
+FastlaneCore::UI.message("[Fastfile] UDID-destination monkey-patch loaded for ::Snapshot::TestCommandGenerator")
+
+# Aborts the lane unless at least MIN_SHOTS PNG files exist under fastlane/screenshots/.
+# Prevents `deliver overwrite_screenshots:true` from blanking ASC when capture silently
+# produced nothing (e.g. flag mismatch, broken accessibility identifier, scheme drift).
+def assert_screenshots_present!(min_shots: 1)
+  pattern = File.join(Dir.pwd, "screenshots", "**", "*.png")
+  shots = Dir.glob(pattern)
+  if shots.size < min_shots
+    UI.user_error!(
+      "Refusing to deliver: only #{shots.size} PNG(s) under fastlane/screenshots/ " \
+      "(need >= #{min_shots}). Capture step produced no images — would wipe ASC if " \
+      "we proceeded with overwrite_screenshots:true."
+    )
+  end
+  UI.success("Found #{shots.size} screenshot PNG(s) — safe to deliver")
+end
 
 default_platform(:ios)
 
@@ -9,9 +54,29 @@ platform :ios do
     capture_ios_screenshots
   end
 
+  desc "1-frame, 1-device smoke run — capture only, NEVER touches ASC. Use to validate the pipeline before submit_version_screenshots."
+  lane :smoke_screenshots do
+    capture_ios_screenshots(
+      devices: ["iPhone 17 Pro Max"],
+      only_testing: ["WraithVPNUITests/WraithVPNScreenshotTests/testCapture01Hero"]
+    )
+    assert_screenshots_present!(min_shots: 1)
+    UI.success("Smoke pass: at least one PNG produced. Safe to run full submit_version_screenshots.")
+  end
+
+  desc "Capture all device-class screenshots, no ASC delivery (sign-off path)"
+  lane :capture_version_screenshots do
+    capture_ios_screenshots(
+      devices: ["iPhone 17 Pro Max", "iPad Pro 13-inch (M5)"]
+    )
+    assert_screenshots_present!(min_shots: 6)
+    UI.success("Capture complete. PNGs in fastlane/screenshots/ — surface to workshop for sign-off, then resubmit_version_screenshots to deliver.")
+  end
+
   desc "Capture + upload App Store Version screenshots to ASC (no binary, no metadata)"
   lane :submit_version_screenshots do
     capture_ios_screenshots
+    assert_screenshots_present!(min_shots: 6)
     api_key = app_store_connect_api_key(
       key_id: ENV["ASC_KEY_ID"],
       issuer_id: ENV["ASC_ISSUER_ID"],
@@ -31,6 +96,7 @@ platform :ios do
 
   desc "Re-upload screenshots from existing fastlane/screenshots/ without re-capturing"
   lane :resubmit_version_screenshots do
+    assert_screenshots_present!(min_shots: 6)
     api_key = app_store_connect_api_key(
       key_id: ENV["ASC_KEY_ID"],
       issuer_id: ENV["ASC_ISSUER_ID"],
