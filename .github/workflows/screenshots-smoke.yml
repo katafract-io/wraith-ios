@@ -1,0 +1,101 @@
+name: Screenshots smoke (1 frame, 1 device, capture-only)
+
+# Doctrine: feedback_validate_one_png_before_long_watcher.md
+# Validates the screenshot pipeline produces actual PNGs without ever touching ASC.
+# Run this before any full submit_version_screenshots dispatch.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: screenshots-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: 1-frame smoke capture
+    runs-on: [ self-hosted, macOS, ios-build, ARM64 ]
+    timeout-minutes: 25
+
+    env:
+      APP_NAME: wraith
+      BUNDLE_ID: com.katafract.wraith
+      SCHEME: WraithVPN
+      RBENV_RUBY: /Users/christianflores/.rbenv/versions/3.3.11
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Load runner env
+        run: |
+          ENV_FILE="$HOME/runner-env/${APP_NAME}.env"
+          if [ -f "$ENV_FILE" ]; then
+            grep -v '^#' "$ENV_FILE" | grep '=' >> "$GITHUB_ENV"
+          fi
+
+      - name: Unlock keychain
+        run: |
+          if [ -n "$KEYCHAIN" ]; then
+            security unlock-keychain -p "" "$KEYCHAIN" || true
+          fi
+
+      - name: Regenerate Xcode project (if xcodegen)
+        run: |
+          if [ -f "project.yml" ] && command -v xcodegen >/dev/null 2>&1; then
+            xcodegen generate 2>&1 | tail -20
+          fi
+
+      - name: Install Ruby deps (Ruby 3.3.11 via rbenv)
+        run: |
+          export PATH="${RBENV_RUBY}/bin:$PATH"
+          ${RBENV_RUBY}/bin/bundle config set --local path 'vendor/bundle'
+          ${RBENV_RUBY}/bin/bundle install --jobs 4 --retry 3 2>&1 | tail -10
+
+      - name: Resolve SPM
+        run: |
+          xcodebuild -project ${SCHEME}.xcodeproj -scheme ${SCHEME} \
+            -resolvePackageDependencies 2>&1 | tail -5 || true
+
+      - name: Run smoke lane (1 frame, NO deliver)
+        id: smoke
+        env:
+          FASTLANE_HIDE_CHANGELOG: 1
+          FASTLANE_SKIP_UPDATE_CHECK: 1
+          FASTLANE_DISABLE_COLORS: 1
+        run: |
+          set -o pipefail
+          export PATH="${RBENV_RUBY}/bin:$PATH"
+          rm -rf fastlane/screenshots
+          ${RBENV_RUBY}/bin/bundle exec fastlane smoke_screenshots 2>&1 | tee /tmp/fastlane-smoke.log | tail -100
+          SHOTS=$(find fastlane/screenshots -name '*.png' 2>/dev/null | wc -l | tr -d ' ')
+          echo "shot_count=${SHOTS}" >> "$GITHUB_OUTPUT"
+          echo "smoke produced ${SHOTS} PNG(s)"
+
+      - name: Collect artifacts
+        if: always()
+        run: |
+          rm -rf /tmp/screenshot-smoke-art
+          mkdir -p /tmp/screenshot-smoke-art
+          cp -r fastlane/screenshots /tmp/screenshot-smoke-art/ 2>/dev/null || true
+          tail -100 /tmp/fastlane-smoke.log > /tmp/screenshot-smoke-art/fastlane.tail.log 2>/dev/null || true
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-smoke-${{ github.run_number }}
+          path: /tmp/screenshot-smoke-art/
+          retention-days: 14
+
+      - name: Hard fail if 0 PNGs
+        if: always()
+        run: |
+          SHOTS="${{ steps.smoke.outputs.shot_count }}"
+          if [ "${SHOTS:-0}" -lt 1 ]; then
+            echo "::error::Smoke produced 0 PNGs — pipeline still broken. Inspect artifact."
+            exit 1
+          fi
+          echo "Smoke OK — ${SHOTS} PNG(s) captured."
