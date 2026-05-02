@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +34,18 @@ import (
 	"github.com/amnezia-vpn/amneziawg-go/conn"
 	hyclient "github.com/apernet/hysteria/core/v2/client"
 )
+
+// hysDebug emits a diagnostic line to stderr (which the iOS extension routes
+// to OSLog and the app surfaces in its debug log export). One-shot enable
+// via WRAITH_HYS_DEBUG=1 so we don't pay the formatting cost in shipped
+// builds — but for now we leave it on by default while bringing up Pattern A.
+var hysDebugOn = os.Getenv("WRAITH_HYS_DEBUG") != "0"
+
+func hysDebug(format string, args ...interface{}) {
+	if hysDebugOn {
+		fmt.Fprintf(os.Stderr, "[hysbind] "+format+"\n", args...)
+	}
+}
 
 // hysRecvBufSize bounds the per-bind receive channel. WG itself blocks
 // on reads when this is full, so we just size for ~64 KiB of in-flight
@@ -60,6 +73,12 @@ type hysteriaBind struct {
 	recvOnce sync.Once
 	closed   atomic.Bool
 	wg       sync.WaitGroup
+
+	// Diagnostic counters (atomic only — no mutex needed)
+	sendCount uint64
+	sendErr   uint64
+	recvCount uint64
+	recvErr   uint64
 }
 
 // newHysteriaBind dials the Hysteria 2 server, opens a UDP-relay session,
@@ -86,16 +105,21 @@ func newHysteriaBind(server string, serverPort uint16, auth, sni, wgRemote strin
 		},
 	}
 
-	c, _, err := hyclient.NewClient(cfg)
+	hysDebug("newHysteriaBind: dial server=%s sni=%s wgRemote=%s", serverAddr, sni, wgRemote)
+	c, info, err := hyclient.NewClient(cfg)
 	if err != nil {
+		hysDebug("newHysteriaBind: NewClient err=%v", err)
 		return nil, fmt.Errorf("hysbind: NewClient: %w", err)
 	}
+	hysDebug("newHysteriaBind: NewClient ok info=%+v", info)
 
 	udpConn, err := c.UDP()
 	if err != nil {
+		hysDebug("newHysteriaBind: c.UDP() err=%v — closing client", err)
 		_ = c.Close()
 		return nil, fmt.Errorf("hysbind: c.UDP(): %w", err)
 	}
+	hysDebug("newHysteriaBind: c.UDP() ok")
 
 	b := &hysteriaBind{
 		client:   c,
@@ -114,6 +138,7 @@ func newHysteriaBind(server string, serverPort uint16, auth, sni, wgRemote strin
 // socket); we still echo it back for API compliance. AWG only uses the
 // returned port for its internal "actual port" book-keeping.
 func (b *hysteriaBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
+	hysDebug("Open(port=%d) closed=%v", port, b.closed.Load())
 	if b.closed.Load() {
 		return nil, 0, errors.New("hysbind: bind closed")
 	}
@@ -154,12 +179,22 @@ func (b *hysteriaBind) SetMark(mark uint32) error { return nil }
 
 // Send wraps each WG datagram and ships it through the Hysteria QUIC
 // session to the server's WG listener.
+//
+// Counts every send + every error for diagnostic. The first 5 calls and
+// every error are logged verbatim; after that we log only a per-1000 tick.
 func (b *hysteriaBind) Send(bufs [][]byte, ep conn.Endpoint) error {
 	if b.closed.Load() {
+		hysDebug("Send: bind closed — refusing %d bufs", len(bufs))
 		return net.ErrClosed
 	}
-	for _, buf := range bufs {
+	for i, buf := range bufs {
+		n := atomic.AddUint64(&b.sendCount, 1)
+		if n <= 5 || n%1000 == 0 {
+			hysDebug("Send #%d (batch idx=%d/%d) len=%d target=%s", n, i, len(bufs), len(buf), b.target)
+		}
 		if err := b.udpConn.Send(buf, b.target); err != nil {
+			atomic.AddUint64(&b.sendErr, 1)
+			hysDebug("Send #%d ERR len=%d target=%s err=%v", n, len(buf), b.target, err)
 			return fmt.Errorf("hysbind: Send: %w", err)
 		}
 	}
@@ -186,10 +221,18 @@ func (b *hysteriaBind) GetOffloadInfo() string { return "hysteriaBind(quic-udp-r
 // drop out.
 func (b *hysteriaBind) recvLoop() {
 	defer b.wg.Done()
+	hysDebug("recvLoop: started")
 	for {
 		data, _, err := b.udpConn.Receive()
 		if err != nil {
+			atomic.AddUint64(&b.recvErr, 1)
+			hysDebug("recvLoop: udpConn.Receive err=%v — exiting (recvCount=%d sendCount=%d sendErr=%d)",
+				err, atomic.LoadUint64(&b.recvCount), atomic.LoadUint64(&b.sendCount), atomic.LoadUint64(&b.sendErr))
 			return
+		}
+		n := atomic.AddUint64(&b.recvCount, 1)
+		if n <= 5 || n%1000 == 0 {
+			hysDebug("recvLoop: Receive #%d len=%d", n, len(data))
 		}
 		// Copy because Hysteria's internal buffer may be reused on next Receive.
 		cp := make([]byte, len(data))
