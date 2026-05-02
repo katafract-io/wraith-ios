@@ -32,6 +32,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             // WireGuard kernel-level log lines stay raw on os.log only —
             // they're high-frequency and would dominate the in-app buffer.
             log.log(level: logLevel.osLogType, "\(message, privacy: .public)")
+            // Bring-up debug: any line tagged "[hysbind]" by the Go-side
+            // diagnostic instrumentation also lands in the exported in-app
+            // debug log. Drop the special-case once Hysteria 2 data plane
+            // is verified end-to-end.
+            if message.contains("[hysbind]") {
+                TunnelLog.ne(.info, message)
+            }
         }
     }()
 

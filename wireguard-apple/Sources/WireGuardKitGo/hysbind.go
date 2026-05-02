@@ -35,15 +35,18 @@ import (
 	hyclient "github.com/apernet/hysteria/core/v2/client"
 )
 
-// hysDebug emits a diagnostic line to stderr (which the iOS extension routes
-// to OSLog and the app surfaces in its debug log export). One-shot enable
-// via WRAITH_HYS_DEBUG=1 so we don't pay the formatting cost in shipped
-// builds — but for now we leave it on by default while bringing up Pattern A.
+// hysDebug routes through CLogger (defined in api-apple.go) so the message
+// crosses C→Swift via the wgSetLogger callback. Swift's PacketTunnelProvider
+// log handler grew a special-case for "[hysbind]" lines that mirrors them
+// into TunnelLog.ne so they appear in the exported in-app debug log.
+//
+// Disabled by setting WRAITH_HYS_DEBUG=0; default-on while bringing up
+// Pattern A. CLogger(0) = verbose level (matches Verbosef).
 var hysDebugOn = os.Getenv("WRAITH_HYS_DEBUG") != "0"
 
 func hysDebug(format string, args ...interface{}) {
 	if hysDebugOn {
-		fmt.Fprintf(os.Stderr, "[hysbind] "+format+"\n", args...)
+		CLogger(0).Printf("[hysbind] "+format, args...)
 	}
 }
 
