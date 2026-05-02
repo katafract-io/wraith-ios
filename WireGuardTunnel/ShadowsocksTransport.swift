@@ -824,19 +824,31 @@ actor ShadowsocksTransport {
     // MARK: - Network I/O
 
     private func waitForConnectionReady(connection: NWConnection) async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            var resumed = false
-            connection.stateUpdateHandler = { state in
-                guard !resumed else { return }
+        try await withCheckedThrowingContinuation { @Sendable (continuation: CheckedContinuation<Void, Error>) in
+            final class ResumedFlag: Sendable {
+                private let lock = NSLock()
+                private var _resumed = false
+                var resumed: Bool {
+                    get { lock.withLock { _resumed } }
+                    set { lock.withLock { _resumed = newValue } }
+                }
+                func tryResume() -> Bool {
+                    lock.withLock {
+                        guard !_resumed else { return false }
+                        _resumed = true
+                        return true
+                    }
+                }
+            }
+            let resumedFlag = ResumedFlag()
+            connection.stateUpdateHandler = { @Sendable state in
+                guard resumedFlag.tryResume() else { return }
                 switch state {
                 case .ready:
-                    resumed = true
                     continuation.resume()
                 case .failed(let error):
-                    resumed = true
                     continuation.resume(throwing: ShadowsocksError.connectionFailed(error.localizedDescription))
                 case .cancelled:
-                    resumed = true
                     continuation.resume(throwing: ShadowsocksError.connectionFailed("Cancelled"))
                 default:
                     break
@@ -844,8 +856,7 @@ actor ShadowsocksTransport {
             }
             connection.start(queue: .global(qos: .userInitiated))
             DispatchQueue.global().asyncAfter(deadline: .now() + 10) {
-                if !resumed {
-                    resumed = true
+                if resumedFlag.tryResume() {
                     continuation.resume(throwing: ShadowsocksError.connectionFailed("Timeout"))
                 }
             }

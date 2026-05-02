@@ -404,7 +404,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         settings.mtu = 1420
 
         TunnelLog.stealth(.info, "Applying tunnel network settings (\(tag)) — addr=\(v4) dns=\(dnsServers.joined(separator: ","))")
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        await withCheckedContinuation { @Sendable (continuation: CheckedContinuation<Void, Never>) in
             self.setTunnelNetworkSettings(settings) { error in
                 if let error {
                     TunnelLog.stealth(.error, "setTunnelNetworkSettings(\(tag)) error: \(error.localizedDescription)")
