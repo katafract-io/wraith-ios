@@ -252,21 +252,22 @@ func (b *hysteriaBind) actualClose() {
 		gen, atomic.LoadUint64(&b.sendCount), atomic.LoadUint64(&b.sendErr),
 		atomic.LoadUint64(&b.recvCount), atomic.LoadUint64(&b.recvErr))
 
+	// Close udpConn first → recvLoop's Receive (or its retry-sleep poll)
+	// observes the bind state change and exits.
 	if udpConn != nil {
-		_ = udpConn.Close() // unblocks recvLoop's Receive
+		_ = udpConn.Close()
 	}
 	if client != nil {
 		_ = client.Close()
 	}
-	if recvCh != nil {
-		// Drain in background so anything still queued doesn't pin memory.
-		go func(ch chan hysRecv) {
-			for range ch {
-			}
-		}(recvCh)
-		close(recvCh)
-	}
+	// Wait for recvLoop to fully exit BEFORE closing recvCh — otherwise a
+	// mid-flight `recvCh <- hysRecv{...}` would panic. Now that recvLoop
+	// can stay alive across redial cycles (auto-redial-on-EOF), this
+	// ordering matters more than it did with the strict-one-shot lifecycle.
 	b.wg.Wait()
+	if recvCh != nil {
+		close(recvCh) // signals makeReceiveFuncFor to return net.ErrClosed
+	}
 }
 
 // SetMark is meaningless on Apple platforms — wireguard-go on iOS/macOS
@@ -313,40 +314,145 @@ func (b *hysteriaBind) ParseEndpoint(s string) (conn.Endpoint, error) {
 // per-datagram), so 1 keeps WG's batching loop from over-allocating.
 func (b *hysteriaBind) BatchSize() int { return 1 }
 
-// recvLoop is the only goroutine pulling from the Hysteria UDP session.
-// It captures the udpConn + recvCh from the bind under lock at start so a
-// concurrent Close() can swap b.udpConn/b.recvCh to nil without racing
-// (the captured refs stay valid until our Receive errors out, which Close
-// triggers by closing udpConn).
+// recvLoop pulls from the Hysteria UDP session and pushes into recvCh.
+// On unplanned EOF (the QUIC session died but nothing called Close), it
+// transparently redials and continues — WG's Send re-reads b.udpConn each
+// call, so the next packet flows through the fresh session without WG ever
+// noticing. Without this, a stale session bleeds Send timeouts (observed:
+// 317 sendErr accumulated over ~90s on pdx-01 build 1530) until the next
+// iOS path event happens to fire BindUpdate.
 //
-// `gen` is the openGen value at the time this goroutine was started — only
-// used in log lines so that close-then-reopen cycles can be told apart.
+// Distinguishing planned vs. unplanned EOF: a planned Close (via actualClose
+// or a NewClient swap from a prior redial cycle) replaces or nils b.udpConn,
+// so it no longer matches the udpConn we captured at goroutine start. An
+// unplanned EOF leaves b.udpConn pointing at OUR (now-dead) conn.
+//
+// `gen` distinguishes log lines across redial cycles; we bump it on each
+// successful redial.
 func (b *hysteriaBind) recvLoop(gen uint64, udpConn hyclient.HyUDPConn, recvCh chan hysRecv) {
 	defer b.wg.Done()
 	hysDebug("recvLoop[gen=%d]: started", gen)
+
 	for {
-		data, _, err := udpConn.Receive()
-		if err != nil {
-			atomic.AddUint64(&b.recvErr, 1)
-			hysDebug("recvLoop[gen=%d]: udpConn.Receive err=%v — exiting (recvCount=%d sendCount=%d sendErr=%d)",
-				gen, err, atomic.LoadUint64(&b.recvCount),
-				atomic.LoadUint64(&b.sendCount), atomic.LoadUint64(&b.sendErr))
+		// Inner receive loop — runs until Receive errors.
+		for {
+			data, _, err := udpConn.Receive()
+			if err != nil {
+				atomic.AddUint64(&b.recvErr, 1)
+				hysDebug("recvLoop[gen=%d]: Receive err=%v (recvCount=%d sendCount=%d sendErr=%d)",
+					gen, err, atomic.LoadUint64(&b.recvCount),
+					atomic.LoadUint64(&b.sendCount), atomic.LoadUint64(&b.sendErr))
+				break
+			}
+			n := atomic.AddUint64(&b.recvCount, 1)
+			if n <= 5 || n%1000 == 0 {
+				hysDebug("recvLoop[gen=%d]: Receive #%d len=%d", gen, n, len(data))
+			}
+			// Copy because Hysteria's internal buffer may be reused on next Receive.
+			cp := make([]byte, len(data))
+			copy(cp, data)
+			select {
+			case recvCh <- hysRecv{data: cp}:
+			default:
+				// Channel full → drop. Same back-pressure model as a real UDP
+				// socket overflowing its kernel rx queue, which WG handles.
+			}
+		}
+
+		// Receive errored. Planned Close, or session death?
+		b.mu.Lock()
+		planned := b.udpConn != udpConn
+		b.mu.Unlock()
+		if planned {
+			hysDebug("recvLoop[gen=%d]: planned close — exiting", gen)
 			return
 		}
-		n := atomic.AddUint64(&b.recvCount, 1)
-		if n <= 5 || n%1000 == 0 {
-			hysDebug("recvLoop[gen=%d]: Receive #%d len=%d", gen, n, len(data))
+
+		// Unplanned. Try to redial with bounded backoff. If the bind is
+		// Closed mid-retry (b.udpConn no longer ours), exit cleanly.
+		newClient, newUDPConn, ok := b.redialAfterEOF(gen, udpConn)
+		if !ok {
+			return
 		}
-		// Copy because Hysteria's internal buffer may be reused on next Receive.
-		cp := make([]byte, len(data))
-		copy(cp, data)
-		select {
-		case recvCh <- hysRecv{data: cp}:
-		default:
-			// Channel full → drop. Same back-pressure model as a real UDP
-			// socket overflowing its kernel rx queue, which WG handles.
+
+		// Swap. Async-close the old client to avoid blocking the recv loop
+		// on whatever cleanup the dead QUIC session needs.
+		b.mu.Lock()
+		oldClient := b.client
+		b.client = newClient
+		b.udpConn = newUDPConn
+		b.openGen++
+		newGen := b.openGen
+		b.mu.Unlock()
+
+		go func(c hyclient.Client) {
+			if c != nil {
+				_ = c.Close()
+			}
+		}(oldClient)
+
+		hysDebug("recvLoop[gen=%d→%d]: auto-redial succeeded — resuming receive loop", gen, newGen)
+		udpConn = newUDPConn
+		gen = newGen
+	}
+}
+
+// redialAfterEOF attempts to re-establish the Hysteria session after an
+// unplanned EOF. Returns the new client+udpConn on success, or (_, _, false)
+// if the bind was Closed during retry sleeps OR all attempts were exhausted.
+//
+// On exhaustion it kicks off actualClose() async so WG's Sends fail fast
+// (with net.ErrClosed) instead of bleeding "no recent network activity"
+// timeouts against a dead session.
+//
+// Backoff schedule: 1s → 2s → 4s → 8s → 16s, 5 attempts total (~31s ceiling).
+func (b *hysteriaBind) redialAfterEOF(gen uint64, deadUDPConn hyclient.HyUDPConn) (hyclient.Client, hyclient.HyUDPConn, bool) {
+	const maxAttempts = 5
+	backoff := time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		hysDebug("recvLoop[gen=%d]: redial attempt %d/%d (cfg server=%s)", gen, attempt, maxAttempts, b.cfg.ServerAddr)
+
+		newClient, _, err := hyclient.NewClient(b.cfg)
+		if err == nil {
+			newUDPConn, udpErr := newClient.UDP()
+			if udpErr == nil {
+				return newClient, newUDPConn, true
+			}
+			_ = newClient.Close()
+			err = udpErr
+		}
+
+		hysDebug("recvLoop[gen=%d]: redial attempt %d failed: %v — sleeping %v", gen, attempt, err, backoff)
+
+		// Sleep, but wake early if the bind was Closed. We poll the bind
+		// state at most every 200ms during the sleep.
+		deadline := time.Now().Add(backoff)
+		for time.Now().Before(deadline) {
+			b.mu.Lock()
+			stillOurs := b.udpConn == deadUDPConn
+			b.mu.Unlock()
+			if !stillOurs {
+				hysDebug("recvLoop[gen=%d]: bind was Closed during redial sleep — abandoning", gen)
+				return nil, nil, false
+			}
+			sleep := deadline.Sub(time.Now())
+			if sleep > 200*time.Millisecond {
+				sleep = 200 * time.Millisecond
+			}
+			if sleep > 0 {
+				time.Sleep(sleep)
+			}
+		}
+
+		if backoff < 16*time.Second {
+			backoff *= 2
 		}
 	}
+
+	hysDebug("recvLoop[gen=%d]: gave up after %d redial attempts — kicking actualClose", gen, maxAttempts)
+	go b.actualClose()
+	return nil, nil, false
 }
 
 // makeReceiveFuncFor returns the conn.ReceiveFunc that WG calls in a tight
