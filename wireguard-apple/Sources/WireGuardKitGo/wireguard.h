@@ -28,6 +28,21 @@ extern int wgTurnOnStealthUDP(const char *settings, int32_t tun_fd,
                               const char *combined_psk,
                               const char *relay_host, int32_t relay_port,
                               const char *target_ip, int32_t target_port);
+/* Stealth-mode Hysteria 2 (current Stealth implementation): WG conn.Bind
+ * sends every datagram over a single Hysteria 2 QUIC session in UDP-relay
+ * mode to the server's wg0 listener. Replaces the gomobile-bound
+ * Hysteria.xcframework path that crashed the appex with a dual Go runtime.
+ *
+ * server / server_port — Hysteria 2 endpoint (UDP/443, UDP/8444 on pdx-02).
+ * auth                 — Sigil bearer token (validated by /internal/hysteria/auth).
+ * sni                  — TLS SNI; empty string falls back to `server`.
+ * wg_remote            — "host:port" the Hysteria server forwards to
+ *                        ("127.0.0.1:51820" since wg0 is co-located).
+ */
+extern int wgTurnOnHysteria(const char *settings, int32_t tun_fd,
+                            const char *server, int32_t server_port,
+                            const char *auth, const char *sni,
+                            const char *wg_remote);
 extern void wgTurnOff(int handle);
 extern int64_t wgSetConfig(int handle, const char *settings);
 extern char *wgGetConfig(int handle);
