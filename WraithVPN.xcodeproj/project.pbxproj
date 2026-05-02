@@ -7,10 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1B4C5132E9E21D92B55292B1 /* DebugConformance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA69D9B2141BA617517E398 /* DebugConformance.swift */; };
 		2906B162EABEB3EC7EA98B36 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E032FDEE137C4898E58F8EBC /* Foundation.framework */; };
+		33F3EE772C78E9FBD3578CF2 /* MockDataSeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11E59A872900D7F4288465F4 /* MockDataSeeder.swift */; };
+		39286BBEFCBF06BCAEB630D7 /* DebugConformanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B34EFAE7AC8835AC0F4E2 /* DebugConformanceView.swift */; };
 		3B9AAF5B5558D10A59877C91 /* ScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE810893CC4B1EF12D98611 /* ScreenshotTests.swift */; };
-		3FA5F3D513F55B455546FFBC /* MockDataSeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1B7838FBCBB2E80D42D34F /* MockDataSeeder.swift */; };
-		6E2F10B7496A8DFB2B2CD4FB /* DebugConformanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B641B1C247DDDD4E16B5B0B /* DebugConformanceView.swift */; };
 		AA000001 /* WraithVPNApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100001 /* WraithVPNApp.swift */; };
 		AA000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100002 /* ContentView.swift */; };
 		AA000003 /* ConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100003 /* ConnectView.swift */; };
@@ -101,7 +102,6 @@
 		BBMACTUNBF007 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100008 /* Models.swift */; };
 		BBMACTUNBF010 /* DebugLogStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000D0 /* DebugLogStore.swift */; };
 		BBMACTUNBF011 /* TunnelLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000D2 /* TunnelLog.swift */; };
-		BD115D81D03D65CB5FD9324C /* DebugConformance.swift in Sources */ = {isa = PBXBuildFile; fileRef = B32C3717ED390766B06A692E /* DebugConformance.swift */; };
 		D23E842CD4882048071FBE21 /* SnapshotHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04C7408A151052A26A9E2AA2 /* SnapshotHelper.swift */; };
 /* End PBXBuildFile section */
 
@@ -211,8 +211,9 @@
 
 /* Begin PBXFileReference section */
 		04C7408A151052A26A9E2AA2 /* SnapshotHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WraithVPN/UITests/SnapshotHelper.swift; sourceTree = SOURCE_ROOT; };
+		11E59A872900D7F4288465F4 /* MockDataSeeder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MockDataSeeder.swift; path = App/MockDataSeeder.swift; sourceTree = "<group>"; };
 		5AE810893CC4B1EF12D98611 /* ScreenshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WraithVPN/UITests/ScreenshotTests.swift; sourceTree = SOURCE_ROOT; };
-		7B641B1C247DDDD4E16B5B0B /* DebugConformanceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugConformanceView.swift; sourceTree = "<group>"; };
+		9EA69D9B2141BA617517E398 /* DebugConformance.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DebugConformance.swift; path = Managers/DebugConformance.swift; sourceTree = "<group>"; };
 		AA100001 /* WraithVPNApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WraithVPNApp.swift; sourceTree = "<group>"; };
 		AA100002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AA100003 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
@@ -259,7 +260,6 @@
 		AA10009A /* AppGroupDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/AppGroupDiagnosticsView.swift; sourceTree = "<group>"; };
 		AA1000D0 /* DebugLogStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogStore.swift; sourceTree = "<group>"; };
 		AA1000D2 /* TunnelLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelLog.swift; sourceTree = "<group>"; };
-		AA1B7838FBCBB2E80D42D34F /* MockDataSeeder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MockDataSeeder.swift; sourceTree = "<group>"; };
 		AAPRIV100 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		AAPROD001 /* WraithVPN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WraithVPN.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AAPROD002 /* WireGuardTunnel.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = WireGuardTunnel.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -274,7 +274,6 @@
 		AATST108 /* ShadowsocksIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShadowsocksIntegrationTests.swift; sourceTree = "<group>"; };
 		AATST_PROD /* WraithVPNTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WraithVPNTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AATUNPRIV100 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		B32C3717ED390766B06A692E /* DebugConformance.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DebugConformance.swift; sourceTree = "<group>"; };
 		BBMAC010 /* WraithVPNMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WraithVPNMacApp.swift; sourceTree = "<group>"; };
 		BBMAC014 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BBMAC015 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -295,6 +294,7 @@
 		BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = WireGuard.xcodeproj; sourceTree = "<group>"; };
 		BCC37CBF2F84CC2E00ABBF3E /* TestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = TestPlan.xctestplan; sourceTree = "<group>"; };
 		E032FDEE137C4898E58F8EBC /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		E82B34EFAE7AC8835AC0F4E2 /* DebugConformanceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DebugConformanceView.swift; path = Views/DebugConformanceView.swift; sourceTree = "<group>"; };
 		F61CDF7E8AB10DFBD5494A53 /* WraithVPNUITests */ = {isa = PBXFileReference; includeInIndex = 0; path = WraithVPNUITests; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -359,14 +359,6 @@
 			name = iOS;
 			sourceTree = "<group>";
 		};
-		6463AC06EF69B9F81B912277 /* App */ = {
-			isa = PBXGroup;
-			children = (
-				AA1B7838FBCBB2E80D42D34F /* MockDataSeeder.swift */,
-			);
-			name = App;
-			sourceTree = "<group>";
-		};
 		7E6FDCD9D7CA227E5DE41B2E /* UITests */ = {
 			isa = PBXGroup;
 			children = (
@@ -408,7 +400,9 @@
 				AA100017 /* WraithVPN.entitlements */,
 				AAPRIV100 /* PrivacyInfo.xcprivacy */,
 				7E6FDCD9D7CA227E5DE41B2E /* UITests */,
-				6463AC06EF69B9F81B912277 /* App */,
+				11E59A872900D7F4288465F4 /* MockDataSeeder.swift */,
+				9EA69D9B2141BA617517E398 /* DebugConformance.swift */,
+				E82B34EFAE7AC8835AC0F4E2 /* DebugConformanceView.swift */,
 			);
 			path = WraithVPN;
 			sourceTree = "<group>";
@@ -430,7 +424,6 @@
 				AA10002F /* RegionPickerView.swift */,
 				AA100026 /* DebugLogView.swift */,
 				AA100041 /* CodeRedemptionView.swift */,
-				7B641B1C247DDDD4E16B5B0B /* DebugConformanceView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -447,7 +440,6 @@
 				AA100025 /* DNSHealthCheck.swift */,
 				AA100039 /* TelemetryManager.swift */,
 				AA100040 /* LatencyProbe.swift */,
-				B32C3717ED390766B06A692E /* DebugConformance.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -893,9 +885,9 @@
 				AA000028 /* WraithAppShortcuts.swift in Sources */,
 				AA000029 /* TelemetryManager.swift in Sources */,
 				AA000036 /* LatencyProbe.swift in Sources */,
-				3FA5F3D513F55B455546FFBC /* MockDataSeeder.swift in Sources */,
-				BD115D81D03D65CB5FD9324C /* DebugConformance.swift in Sources */,
-				6E2F10B7496A8DFB2B2CD4FB /* DebugConformanceView.swift in Sources */,
+				33F3EE772C78E9FBD3578CF2 /* MockDataSeeder.swift in Sources */,
+				1B4C5132E9E21D92B55292B1 /* DebugConformance.swift in Sources */,
+				39286BBEFCBF06BCAEB630D7 /* DebugConformanceView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
