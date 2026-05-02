@@ -35,3 +35,9 @@ Thumbs.db
 
 # Claude Code local session files — never commit
 .claude/
+
+# Local agent / coder notes — never commit; share via codex/<topic>-review-docs branch
+# Doctrine: s3://workshop/doctrine/private-agent-review-docs.md
+MEMORY.md
+docs/
+*.ai.md
