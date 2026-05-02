@@ -162,16 +162,6 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		88A4872070BA5A8D05011DEF /* Embed Frameworks */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 10;
-			files = (
-			);
-			name = "Embed Frameworks";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 		AACOPY001 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -617,7 +607,6 @@
 				AABP002 /* Frameworks */,
 				AASP002 /* Sources */,
 				AATUNRES001 /* Resources */,
-				88A4872070BA5A8D05011DEF /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
