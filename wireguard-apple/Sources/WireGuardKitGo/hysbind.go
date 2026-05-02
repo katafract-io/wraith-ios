@@ -31,7 +31,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/amnezia-vpn/amneziawg-go/conn"
+	"golang.zx2c4.com/wireguard/conn"
 	hyclient "github.com/apernet/hysteria/core/v2/client"
 )
 
@@ -211,10 +211,6 @@ func (b *hysteriaBind) ParseEndpoint(s string) (conn.Endpoint, error) {
 // BatchSize: we never batch on the client side (Hysteria UDP relay is
 // per-datagram), so 1 keeps WG's batching loop from over-allocating.
 func (b *hysteriaBind) BatchSize() int { return 1 }
-
-// GetOffloadInfo is an AWG-only diagnostic surface. Used by the Swift
-// side via `wgGetConfig` to log "we're in Hysteria mode" plumbing.
-func (b *hysteriaBind) GetOffloadInfo() string { return "hysteriaBind(quic-udp-relay)" }
 
 // recvLoop is the only goroutine pulling from the Hysteria UDP session.
 // It exits when Close() shuts udpConn — Receive returns an error and we
