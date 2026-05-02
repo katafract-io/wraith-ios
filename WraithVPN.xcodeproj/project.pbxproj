@@ -7,10 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1B4C5132E9E21D92B55292B1 /* DebugConformance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA69D9B2141BA617517E398 /* DebugConformance.swift */; };
 		2906B162EABEB3EC7EA98B36 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E032FDEE137C4898E58F8EBC /* Foundation.framework */; };
 		33F3EE772C78E9FBD3578CF2 /* MockDataSeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11E59A872900D7F4288465F4 /* MockDataSeeder.swift */; };
-		39286BBEFCBF06BCAEB630D7 /* DebugConformanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E82B34EFAE7AC8835AC0F4E2 /* DebugConformanceView.swift */; };
 		3B9AAF5B5558D10A59877C91 /* ScreenshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE810893CC4B1EF12D98611 /* ScreenshotTests.swift */; };
 		AA000001 /* WraithVPNApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100001 /* WraithVPNApp.swift */; };
 		AA000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA100002 /* ContentView.swift */; };
@@ -213,7 +211,6 @@
 		04C7408A151052A26A9E2AA2 /* SnapshotHelper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WraithVPN/UITests/SnapshotHelper.swift; sourceTree = SOURCE_ROOT; };
 		11E59A872900D7F4288465F4 /* MockDataSeeder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MockDataSeeder.swift; path = App/MockDataSeeder.swift; sourceTree = "<group>"; };
 		5AE810893CC4B1EF12D98611 /* ScreenshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WraithVPN/UITests/ScreenshotTests.swift; sourceTree = SOURCE_ROOT; };
-		9EA69D9B2141BA617517E398 /* DebugConformance.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DebugConformance.swift; path = Managers/DebugConformance.swift; sourceTree = "<group>"; };
 		AA100001 /* WraithVPNApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WraithVPNApp.swift; sourceTree = "<group>"; };
 		AA100002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		AA100003 /* ConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectView.swift; sourceTree = "<group>"; };
@@ -294,7 +291,6 @@
 		BC9FECE02F80E5140020F723 /* WireGuard.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = WireGuard.xcodeproj; sourceTree = "<group>"; };
 		BCC37CBF2F84CC2E00ABBF3E /* TestPlan.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = TestPlan.xctestplan; sourceTree = "<group>"; };
 		E032FDEE137C4898E58F8EBC /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		E82B34EFAE7AC8835AC0F4E2 /* DebugConformanceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DebugConformanceView.swift; path = Views/DebugConformanceView.swift; sourceTree = "<group>"; };
 		F61CDF7E8AB10DFBD5494A53 /* WraithVPNUITests */ = {isa = PBXFileReference; includeInIndex = 0; path = WraithVPNUITests; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -401,8 +397,6 @@
 				AAPRIV100 /* PrivacyInfo.xcprivacy */,
 				7E6FDCD9D7CA227E5DE41B2E /* UITests */,
 				11E59A872900D7F4288465F4 /* MockDataSeeder.swift */,
-				9EA69D9B2141BA617517E398 /* DebugConformance.swift */,
-				E82B34EFAE7AC8835AC0F4E2 /* DebugConformanceView.swift */,
 			);
 			path = WraithVPN;
 			sourceTree = "<group>";
@@ -886,8 +880,6 @@
 				AA000029 /* TelemetryManager.swift in Sources */,
 				AA000036 /* LatencyProbe.swift in Sources */,
 				33F3EE772C78E9FBD3578CF2 /* MockDataSeeder.swift in Sources */,
-				1B4C5132E9E21D92B55292B1 /* DebugConformance.swift in Sources */,
-				39286BBEFCBF06BCAEB630D7 /* DebugConformanceView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
