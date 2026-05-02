@@ -89,6 +89,14 @@ type hysteriaBind struct {
 	wg      sync.WaitGroup
 	openGen uint64 // bumped each successful Open so log lines distinguish sessions
 
+	// Deferred-close timer. iOS NEPathMonitor fires pathUpdate freely
+	// (interface flap, DNS reload, screen lock, app foreground) →
+	// WireGuardKit calls wgBumpSockets → BindUpdate (Close+Open back-to-back).
+	// Each cycle was tearing down our QUIC session and re-handshaking.
+	// Defer the actual teardown by 2s; if Open arrives within that window,
+	// cancel the timer and reuse the live session.
+	pendingClose *time.Timer
+
 	// Diagnostic counters (atomic only)
 	sendCount uint64
 	sendErr   uint64
@@ -143,6 +151,18 @@ func (b *hysteriaBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	// Cancel any in-flight deferred close — we're being reopened immediately,
+	// so reuse the live session and skip a full QUIC handshake.
+	if b.pendingClose != nil {
+		stopped := b.pendingClose.Stop()
+		b.pendingClose = nil
+		if stopped && b.client != nil {
+			hysDebug("Open(port=%d): cancelled deferred close — reusing live session gen=%d", port, b.openGen)
+			return []conn.ReceiveFunc{makeReceiveFuncFor(b.recvCh, b.endpoint)}, port, nil
+		}
+		// Timer already fired (actualClose ran) — fall through to fresh dial.
+	}
+
 	if b.client != nil {
 		hysDebug("Open(port=%d): already open (gen=%d)", port, b.openGen)
 		return []conn.ReceiveFunc{makeReceiveFuncFor(b.recvCh, b.endpoint)}, port, nil
@@ -181,10 +201,44 @@ func (b *hysteriaBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
 	return []conn.ReceiveFunc{makeReceiveFuncFor(recvCh, b.endpoint)}, port, nil
 }
 
-// Close tears down the live Hysteria session and leaves the bind in a
-// clean state ready for another Open. Idempotent.
+// Close defers the actual teardown by 2 seconds. iOS NEPathMonitor fires
+// pathUpdate frequently (interface flap, DNS reload, screen lock, app
+// foreground) and each one triggers wgBumpSockets → BindUpdate (Close+Open
+// back-to-back). Without deferral every cycle would re-handshake the QUIC
+// session — expensive and disruptive. With deferral, an Open within 2s
+// cancels the timer and reuses the live session.
+//
+// If a real shutdown happens (wgTurnOff), no Open follows and the timer
+// fires normally to actualClose().
 func (b *hysteriaBind) Close() error {
 	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.client == nil {
+		hysDebug("Close: no live session")
+		return nil
+	}
+
+	if b.pendingClose != nil {
+		// Already deferred; let the existing timer ride.
+		return nil
+	}
+
+	hysDebug("Close: deferring teardown of gen=%d for 2s (absorb iOS path-update flapping)", b.openGen)
+	b.pendingClose = time.AfterFunc(2*time.Second, b.actualClose)
+	return nil
+}
+
+// actualClose performs the real teardown. Called by the deferred-close
+// timer (Close() arms it) or by recvLoop when it gives up reconnecting.
+func (b *hysteriaBind) actualClose() {
+	b.mu.Lock()
+	if b.pendingClose == nil && b.client == nil {
+		// Already closed by a parallel actualClose; nothing to do.
+		b.mu.Unlock()
+		return
+	}
+	b.pendingClose = nil
 	gen := b.openGen
 	udpConn := b.udpConn
 	client := b.client
@@ -194,19 +248,16 @@ func (b *hysteriaBind) Close() error {
 	b.recvCh = nil
 	b.mu.Unlock()
 
-	if client == nil {
-		hysDebug("Close: no live session")
-		return nil
-	}
-
-	hysDebug("Close: tearing down gen=%d (sendCount=%d sendErr=%d recvCount=%d recvErr=%d)",
+	hysDebug("Close: actual teardown gen=%d (sendCount=%d sendErr=%d recvCount=%d recvErr=%d)",
 		gen, atomic.LoadUint64(&b.sendCount), atomic.LoadUint64(&b.sendErr),
 		atomic.LoadUint64(&b.recvCount), atomic.LoadUint64(&b.recvErr))
 
 	if udpConn != nil {
 		_ = udpConn.Close() // unblocks recvLoop's Receive
 	}
-	_ = client.Close()
+	if client != nil {
+		_ = client.Close()
+	}
 	if recvCh != nil {
 		// Drain in background so anything still queued doesn't pin memory.
 		go func(ch chan hysRecv) {
@@ -216,7 +267,6 @@ func (b *hysteriaBind) Close() error {
 		close(recvCh)
 	}
 	b.wg.Wait()
-	return nil
 }
 
 // SetMark is meaningless on Apple platforms — wireguard-go on iOS/macOS
