@@ -35,3 +35,8 @@ Thumbs.db
 
 # Claude Code local session files — never commit
 .claude/
+
+# Local agent/coder notes and debug dumps — never commit
+MEMORY.md
+docs/
+*.ai.md

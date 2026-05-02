@@ -1,65 +1,29 @@
 #!/usr/bin/env bash
-# bump — increment build number and push to trigger Xcode Cloud
+# Retired release helper.
 #
-# Usage:
-#   ./scripts/bump            # increments build number (107 → 108)
-#   ./scripts/bump 150        # sets explicit build number
+# TestFlight releases now run through .github/workflows/ship.yml, which:
+# - computes the next build number from App Store Connect,
+# - rebuilds WireGuardKitGo from source,
+# - archives and exports the IPA,
+# - uploads via fastlane pilot,
+# - distributes to Internal Testing.
 #
-# Version strategy:
-#   MARKETING_VERSION (what users see: "1.0") is set manually in Xcode
-#   when shipping a new public version. This script only touches the build
-#   number (CURRENT_PROJECT_VERSION), which TestFlight uses to distinguish
-#   builds and must increase monotonically.
-#
-#   Tags: v{build} (e.g. v107) — "v" prefix triggers Xcode Cloud Default workflow.
+# Do not use this script to bump, tag, or push builds.
 
 set -euo pipefail
 
-PBXPROJ="WraithVPN.xcodeproj/project.pbxproj"
+cat <<'EOF'
+scripts/bump is retired.
 
-# ── Find current build number ────────────────────────────────────────────────
-CURRENT_BUILD=$(grep -m1 'CURRENT_PROJECT_VERSION = ' "$PBXPROJ" | grep -oE '[0-9]+')
+Use the GitHub Actions Ship to TestFlight workflow instead:
+  .github/workflows/ship.yml
 
-# ── Compute next build number ────────────────────────────────────────────────
-ARG="${1:-}"
-if [[ -z "$ARG" ]]; then
-  NEXT_BUILD=$(( CURRENT_BUILD + 1 ))
-elif [[ "$ARG" =~ ^[0-9]+$ ]]; then
-  NEXT_BUILD="$ARG"
-else
-  echo "Usage: bump [build_number]"
-  exit 1
-fi
+Normal release path:
+  1. Commit app changes on a feature branch.
+  2. Merge/push to main or release/*.
+  3. Let ship.yml compute the next App Store Connect build number and upload to TestFlight.
 
-TAG="v${NEXT_BUILD}"
-MARKETING=$(grep -m1 'MARKETING_VERSION = ' "$PBXPROJ" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?')
+This script intentionally exits without changing files, tagging, or pushing.
+EOF
 
-# ── Confirm ──────────────────────────────────────────────────────────────────
-echo "  version : ${MARKETING} (public, unchanged)"
-echo "  build   : ${CURRENT_BUILD} → ${NEXT_BUILD}"
-echo "  tag     : ${TAG}"
-echo ""
-read -r -p "Tag and push ${TAG}? [y/N] " CONFIRM
-if [[ "$(echo "$CONFIRM" | tr '[:upper:]' '[:lower:]')" != "y" ]]; then
-  echo "Aborted."
-  exit 0
-fi
-
-# ── Update build number in Xcode project ────────────────────────────────────
-sed -i '' "s/CURRENT_PROJECT_VERSION = ${CURRENT_BUILD};/CURRENT_PROJECT_VERSION = ${NEXT_BUILD};/g" "$PBXPROJ"
-
-echo "  build   : ${NEXT_BUILD}"
-
-# ── Commit, tag, push ────────────────────────────────────────────────────────
-git add -A
-git commit -m "Bump build to ${NEXT_BUILD}"
-git tag "$TAG"
-git push origin main
-git push origin "$TAG"
-
-echo ""
-echo "✓ Tagged ${TAG} and pushed."
-echo "  Xcode Cloud will build and upload to TestFlight."
-echo "  Internal testers will receive the build automatically."
-echo ""
-echo "  Monitor: ./check-builds"
+exit 1

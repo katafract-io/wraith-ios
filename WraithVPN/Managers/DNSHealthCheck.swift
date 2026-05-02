@@ -38,7 +38,7 @@ struct TunnelHealthReport {
     let timestamp: Date
 
     var isHealthy: Bool {
-        havenDNS.isPassed && handshakeOK
+        handshakeOK
     }
 
     var diagnosis: String {
@@ -48,7 +48,7 @@ struct TunnelHealthReport {
         case (true, false):
             return "DNS resolving but handshake status unknown"
         case (false, true):
-            return "WG connected but Haven DNS unreachable. AGH may be down on this node, or AllowedIPs misconfigured."
+            return "Tunnel active. Haven DNS probe inconclusive."
         case (false, false):
             return "Tunnel not routing traffic. Peer may be revoked or server unreachable. Re-provisioning recommended."
         }

@@ -375,15 +375,15 @@ final class WireGuardManager: ObservableObject {
         }
         DebugLogger.shared.peer("Region connect: region=\(regionId) → node=\(provision.nodeId) peer=\(provision.peerId)")
 
-        await applyOnDemand(autoConnectEnabled)
-        try? await manager?.loadFromPreferences()
-        try startTunnel()
-
         persistStealthFallback(provision: provision)
         if let ip = exitIP {
             appGroupDefaults?.set(ip, forKey: "wgExitIP")
         }
         applyStealthPreferenceFlag()
+
+        await applyOnDemand(autoConnectEnabled)
+        try? await manager?.loadFromPreferences()
+        try startTunnel()
     }
 
     /// Foreground-triggered Layer 2 probe. Called when the app returns from
@@ -835,10 +835,20 @@ final class WireGuardManager: ObservableObject {
             return "\(parts[0]).\(parts[1]).\(parts[2]).1"
         }()
 
-        let report = await DNSHealthCheck.shared.runHealthCheck(
+        var report = await DNSHealthCheck.shared.runHealthCheck(
             havenDNSIP: havenIP,
             connection: tunnelProviderSession
         )
+
+        if !report.havenDNS.isPassed, report.handshakeOK {
+            DebugLogger.shared.dns("Haven DNS probe failed but WG handshake is OK; retrying after transport settle window")
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled, status == .connected else { return }
+            report = await DNSHealthCheck.shared.runHealthCheck(
+                havenDNSIP: havenIP,
+                connection: tunnelProviderSession
+            )
+        }
         healthReport = report
 
         if !report.needsReprovision {

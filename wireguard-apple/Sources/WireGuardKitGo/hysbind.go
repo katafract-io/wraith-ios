@@ -30,8 +30,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.zx2c4.com/wireguard/conn"
 	hyclient "github.com/apernet/hysteria/core/v2/client"
+	"golang.zx2c4.com/wireguard/conn"
 )
 
 // hysDebug routes through CLogger (defined in api-apple.go) so the message
@@ -112,7 +112,8 @@ type hysteriaBind struct {
 // auth              — Sigil bearer token; validated server-side via /internal/hysteria/auth.
 // sni               — TLS SNI; usually equals server FQDN.
 // wgRemote          — "host:port" the server forwards to (we always send
-//                     "127.0.0.1:51820" since wg0 is co-located).
+//
+//	"127.0.0.1:51820" since wg0 is co-located).
 func newHysteriaBind(server string, serverPort uint16, auth, sni, wgRemote string) (*hysteriaBind, error) {
 	serverAddr, err := net.ResolveUDPAddr("udp", net.JoinHostPort(server, fmt.Sprintf("%d", serverPort)))
 	if err != nil {
@@ -154,9 +155,9 @@ func (b *hysteriaBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
 	// Cancel any in-flight deferred close — we're being reopened immediately,
 	// so reuse the live session and skip a full QUIC handshake.
 	if b.pendingClose != nil {
-		stopped := b.pendingClose.Stop()
+		b.pendingClose.Stop()
 		b.pendingClose = nil
-		if stopped && b.client != nil {
+		if b.client != nil {
 			hysDebug("Open(port=%d): cancelled deferred close — reusing live session gen=%d", port, b.openGen)
 			return []conn.ReceiveFunc{makeReceiveFuncFor(b.recvCh, b.endpoint)}, port, nil
 		}
@@ -225,15 +226,21 @@ func (b *hysteriaBind) Close() error {
 	}
 
 	hysDebug("Close: deferring teardown of gen=%d for 2s (absorb iOS path-update flapping)", b.openGen)
-	b.pendingClose = time.AfterFunc(2*time.Second, b.actualClose)
+	b.pendingClose = time.AfterFunc(2*time.Second, func() { b.actualClose(false) })
 	return nil
 }
 
 // actualClose performs the real teardown. Called by the deferred-close
 // timer (Close() arms it) or by recvLoop when it gives up reconnecting.
-func (b *hysteriaBind) actualClose() {
+func (b *hysteriaBind) actualClose(force bool) {
 	b.mu.Lock()
-	if b.pendingClose == nil && b.client == nil {
+	if !force && b.pendingClose == nil {
+		// The deferred timer fired after Open() had already canceled it. Do not
+		// tear down the live session that Open() intentionally reused.
+		b.mu.Unlock()
+		return
+	}
+	if b.client == nil {
 		// Already closed by a parallel actualClose; nothing to do.
 		b.mu.Unlock()
 		return
@@ -451,7 +458,7 @@ func (b *hysteriaBind) redialAfterEOF(gen uint64, deadUDPConn hyclient.HyUDPConn
 	}
 
 	hysDebug("recvLoop[gen=%d]: gave up after %d redial attempts — kicking actualClose", gen, maxAttempts)
-	go b.actualClose()
+	go b.actualClose(true)
 	return nil, nil, false
 }
 
