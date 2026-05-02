@@ -13,16 +13,56 @@ import Foundation
 ///   --mock-haven-prefs          (force Haven DNS settings = standard tier)
 ///   --mock-dns-stats            (seed DNS query/block counters)
 ///   --paywall-sovereign-annual  (force paywall to land on Sovereign annual)
-///
-/// Tek wires this to the real RegionStore / ConnectionManager / DNSStatsStore
-/// when the Sprint 4 device-test branch is App-Store-ready. Until then this
-/// is a call-site stub so XCUITests can launch with --screenshots and not
-/// crash when ViewModels probe ScreenshotMode.
 struct MockDataSeeder {
-    static func seedDataIfNeeded() {
-        guard CommandLine.arguments.contains("--screenshots") else { return }
-        // TODO: wire to RegionStore / ConnectionManager / DNSStatsStore.
-        // Sample seed data per launch flag should live alongside ScreenshotMode.
-        print("MockDataSeeder: TODO — wire to WraithVPN region/connection/DNS models")
+    static func seedConnectedState(
+        regionManager: ServerListManager,
+        connectionManager: WireGuardManager,
+        havenManager: HavenDNSManager
+    ) {
+        // Select Singapore (sgp2) as the demo region with 47ms latency.
+        let singaporeServer = VPNServer(
+            nodeId: "sgp2",
+            site: "sgp2",
+            region: "sg",
+            displayName: "Singapore",
+            ipv4: "149.28.132.184",
+            ipv6: "fd10:0:8::1",
+            endpoints: .init(
+                primary: "sgp2.example.com",
+                secondary: "149.28.132.184"
+            ),
+            publicKey: "mock-pubkey-sgp2",
+            wgPort: 51820,
+            loadScore: 0.5,
+            ipv6Available: true,
+            geodnsWeight: 100
+        )
+
+        // Prime the region manager.
+        regionManager.selectedServer = singaporeServer
+
+        // Prime the connection manager: set status to .connected, assign the region,
+        // and set connectedSince to 90 seconds ago so the UI timer reads "1m 30s".
+        connectionManager.status = .connected
+        connectionManager.connectedServer = singaporeServer
+        connectionManager.assignedIP = "10.11.8.47"
+        connectionManager.activePeerId = "sgp2-peer-001"
+        connectionManager.isProvisioned = true
+        connectionManager.exitIP = "149.28.132.184"
+        connectionManager.activeTransport = .wireguard
+        connectionManager.connectedSince = Date().addingTimeInterval(-90)
+
+        // Prime Haven DNS manager: set it enabled with standard tier prefs.
+        havenManager.isEnabled = true
+        havenManager.preferences = DnsPreferences(
+            tier: "standard",
+            protectionLevel: "default",
+            protectionLevels: ["default", "strict"],
+            safeBrowsing: true,
+            familyFilter: false,
+            blockedServices: [],
+            blockableServices: ["facebook", "twitter", "linkedin", "amazon"],
+            updatedAt: nil
+        )
     }
 }
