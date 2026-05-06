@@ -1014,8 +1014,25 @@ final class WireGuardManager: ObservableObject {
 
         // Tunnel is dead — try to reprovision (max 2 attempts per connect session).
         guard reprovisionAttempts < maxReprovisionAttempts else {
-            DebugLogger.shared.wg("Reprovision limit reached (\(maxReprovisionAttempts)). Network may be blocking UDP 51820.")
-            status = .failed("VPN tunnel blocked. Try switching to cellular or a different network.")
+            // Determine accurate error message based on active transport and network
+            let debugMsg: String
+            let userMsg: String
+
+            if activeTransport == .shadowsocks {
+                debugMsg = "Reprovision limit reached (\(maxReprovisionAttempts)). Stealth transport (port 443) unreachable."
+                userMsg = "Stealth tunnel unreachable. Server may be temporarily unavailable."
+            } else {
+                debugMsg = "Reprovision limit reached (\(maxReprovisionAttempts)). Network may be blocking UDP 51820."
+                // Check if already on cellular before suggesting to switch
+                if currentNetClass == "cellular" {
+                    userMsg = "VPN tunnel blocked. Try a different VPN region."
+                } else {
+                    userMsg = "VPN tunnel blocked. Try switching to cellular or a different network."
+                }
+            }
+
+            DebugLogger.shared.wg(debugMsg)
+            status = .failed(userMsg)
             return
         }
         // Claim the provisioning lock BEFORE the first await so a
