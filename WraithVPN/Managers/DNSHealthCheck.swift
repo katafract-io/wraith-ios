@@ -48,7 +48,7 @@ struct TunnelHealthReport {
         case (true, false):
             return "DNS resolving but handshake status unknown"
         case (false, true):
-            return "WG connected but Haven DNS unreachable. AGH may be down on this node, or AllowedIPs misconfigured."
+            return "Haven DNS unreachable on this connection. Reconnecting may help."
         case (false, false):
             return "Tunnel not routing traffic. Peer may be revoked or server unreachable. Re-provisioning recommended."
         }
@@ -66,17 +66,20 @@ final class DNSHealthCheck {
     static let shared = DNSHealthCheck()
     private init() {}
 
-    /// Runs the full health check suite. Timeout per test: 5 seconds.
+    /// Runs the full health check suite. Haven DNS test includes retry-once logic for
+    /// transport warm-up (Stealth/Hysteria needs ~200-1200ms after .connected fires).
     func runHealthCheck(havenDNSIP: String?, connection: Any?) async -> TunnelHealthReport {
         let dbg = await DebugLogger.shared
 
         await dbg.dns("Starting post-connect health check")
 
         // Test 1: Haven DNS (node's WG interface IP, in-tunnel)
+        // Uses two-strike retry: first-attempt timeout doesn't surface banner,
+        // second failure does.
         let havenResult: DNSTestResult
         if let havenIP = havenDNSIP, !havenIP.isEmpty {
             await dbg.dns("Test 1: resolving google.com via Haven DNS \(havenIP)")
-            havenResult = await resolveDNS(server: havenIP, hostname: "google.com")
+            havenResult = await runDNSHealthCheckWithRetry(server: havenIP, hostname: "google.com")
         } else {
             await dbg.dns("Test 1: skipped (no Haven DNS IP)")
             havenResult = .skipped
@@ -104,7 +107,36 @@ final class DNSHealthCheck {
         return report
     }
 
-    // MARK: - DNS resolution test
+    // MARK: - DNS resolution test (with retry)
+
+    /// Runs DNS health check with one retry. First failure is logged but doesn't surface
+    /// a banner; only second failure triggers user-visible error. Includes 3s delay
+    /// between attempts to allow transport warm-up (especially for Stealth/Hysteria).
+    private func runDNSHealthCheckWithRetry(server: String, hostname: String) async -> DNSTestResult {
+        let dbg = await DebugLogger.shared
+
+        // Attempt 1
+        let firstAttempt = await resolveDNS(server: server, hostname: hostname, timeoutSecs: 5.0)
+        if firstAttempt.isPassed {
+            return firstAttempt
+        }
+
+        // First attempt failed; log to debug (not banner-level)
+        await dbg.dns("DNS health check: first attempt failed, waiting 3s before retry")
+
+        // Wait 3 seconds for transport warm-up
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+
+        // Attempt 2
+        let secondAttempt = await resolveDNS(server: server, hostname: hostname, timeoutSecs: 5.0)
+        if secondAttempt.isPassed {
+            return secondAttempt
+        }
+
+        // Both attempts failed; return failed result (will surface banner)
+        await dbg.dns("DNS health check: both attempts failed")
+        return secondAttempt
+    }
 
     /// Sends a raw UDP DNS query to the specified server and waits for a response.
     /// This bypasses the system resolver so we test the exact DNS server we want.
