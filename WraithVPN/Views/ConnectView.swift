@@ -372,6 +372,23 @@ struct ConnectView: View {
                     .foregroundStyle(Color.kataChampagne.opacity(0.5))
                 }
 
+                if vpn.reconnectCount > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("\(vpn.reconnectCount) reconnect\(vpn.reconnectCount == 1 ? "" : "s")")
+                            .font(.kataMono(10))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.kataGold.opacity(0.12))
+                    .foregroundStyle(Color.kataGold.opacity(0.7))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.kataGold.opacity(0.25), lineWidth: 0.5))
+                    .transition(.scale.combined(with: .opacity))
+                    .animation(.easeInOut(duration: 0.3), value: vpn.reconnectCount)
+                }
+
                 // Stealth badge — driven by activeTransport (reality), NOT transportPreference (intent).
                 // Three visual states:
                 //   1. Live Stealth   (gold badge, "Stealth")           — activeTransport == .shadowsocks

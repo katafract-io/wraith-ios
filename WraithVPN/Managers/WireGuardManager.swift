@@ -59,6 +59,8 @@ final class WireGuardManager: ObservableObject {
     @Published var multiHopEntryServer: VPNServer? = nil
     /// Exit node for the active multi-hop session (same as connectedServer for multi-hop).
     @Published var multiHopExitServer: VPNServer? = nil
+    /// Count of reconnections (reprovisions) during the current session.
+    @Published var reconnectCount: Int = 0
 
     // MARK: - Private
 
@@ -733,6 +735,7 @@ final class WireGuardManager: ObservableObject {
     /// while leaving the user's autoConnectEnabled preference intact.
     func disconnect() {
         reprovisionAttempts = 0
+        reconnectCount = 0
         status = .disconnecting
 
         // Cancel any in-flight connect Task (provision/switch) so the UI responds immediately
@@ -894,6 +897,7 @@ final class WireGuardManager: ObservableObject {
             // NOTE: this is the ONLY place we reset. .connected NE events
             // do NOT reset because NE connected ≠ WG handshake succeeded.
             reprovisionAttempts = 0
+            reconnectCount = 0
             if let server = connectedServer, let session = tunnelProviderSession {
                 TelemetryManager.shared.sessionStarted(nodeId: server.nodeId, connection: session)
             }
@@ -941,6 +945,7 @@ final class WireGuardManager: ObservableObject {
 
         // Attempt 2+: full reprovision (peer revoked or server unreachable)
         TelemetryManager.shared.recordReprovision()
+        reconnectCount += 1
         DebugLogger.shared.wg("Health check FAILED: soft reconnect insufficient. Full reprovision (attempt \(reprovisionAttempts)/\(maxReprovisionAttempts))...")
 
         // Detach the reprovision so it survives cancellation of the enclosing
