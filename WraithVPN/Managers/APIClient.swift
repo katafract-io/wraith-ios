@@ -17,6 +17,8 @@ enum APIError: LocalizedError {
     case noToken
     /// Server returned 401 — token is invalid or expired. Caller should sign out.
     case unauthorized
+    /// Server returned 429 with Retry-After > 30s. Caller should wait and try again.
+    case rateLimited(retryAfterSeconds: Int)
 
     var errorDescription: String? {
         switch self {
@@ -26,6 +28,7 @@ enum APIError: LocalizedError {
         case .decodingError(let e):       return "Decode error: \(e.localizedDescription)"
         case .noToken:                    return "No subscription token found. Please subscribe first."
         case .unauthorized:               return "Your subscription is no longer active. Please re-subscribe."
+        case .rateLimited(let seconds):   return "Server is busy. Please try again in \(seconds) seconds."
         }
     }
 }
@@ -317,8 +320,36 @@ final class APIClient {
         return try await execute(urlRequest, req: req)
     }
 
+    /// Parses the Retry-After response header into seconds.
+    /// Handles both integer (seconds) and HTTP-date formats.
+    /// Returns nil if the header is missing or unparseable.
+    private func parseRetryAfter(_ response: HTTPURLResponse) -> Int? {
+        guard let retryAfterString = response.value(forHTTPHeaderField: "Retry-After") else {
+            return nil
+        }
+
+        // Try parsing as seconds (integer)
+        if let seconds = Int(retryAfterString) {
+            return seconds
+        }
+
+        // Try parsing as HTTP date (RFC 1123)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.timeZone = TimeZone(abbreviation: "GMT")
+
+        if let retryDate = dateFormatter.date(from: retryAfterString) {
+            let secondsUntilRetry = Int(retryDate.timeIntervalSince(Date()))
+            return max(0, secondsUntilRetry)
+        }
+
+        return nil
+    }
+
     /// Executes the request with up to 2 retries on transient failures (5xx, connection errors).
     /// 4xx errors are never retried — they indicate a client-side problem.
+    /// Exception: 429 (rate limit) with Retry-After ≤ 30s will be retried once after waiting.
     private func execute<T: Decodable>(_ urlRequest: URLRequest, req: APIRequest, attempt: Int = 0) async throws -> T {
         let data: Data
         let response: URLResponse
@@ -362,6 +393,17 @@ final class APIClient {
                 KeychainHelper.shared.delete(for: .tokenPlan)
                 NotificationCenter.default.post(name: .authTokenInvalidated, object: nil)
                 throw APIError.unauthorized
+            }
+
+            // 429 Rate Limit — if Retry-After is present and ≤ 30s, wait and retry once.
+            if http.statusCode == 429 {
+                if let retryAfterSeconds = parseRetryAfter(http), retryAfterSeconds <= 30, attempt < 1 {
+                    let delayNanos = UInt64(retryAfterSeconds) * 1_000_000_000
+                    try? await Task.sleep(nanoseconds: delayNanos)
+                    return try await execute(urlRequest, req: req, attempt: attempt + 1)
+                } else if let retryAfterSeconds = parseRetryAfter(http) {
+                    throw APIError.rateLimited(retryAfterSeconds: retryAfterSeconds)
+                }
             }
 
             // 5xx — retry up to 2 times with backoff.
