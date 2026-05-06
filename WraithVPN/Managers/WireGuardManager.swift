@@ -522,7 +522,7 @@ final class WireGuardManager: ObservableObject {
         // Assuming .reasserting maps to .connecting in the VPNStatus enum
         networkChangeReassertingRestarted = true
         DebugLogger.shared.ne("Network change: tunnel reasserting >10s, restarting...")
-        manager?.connection.startVPNTunnel()
+        try? startTunnel()
     }
 
     /// Debounced wrapper around `runLatencyReport` — collapses rapid triggers
