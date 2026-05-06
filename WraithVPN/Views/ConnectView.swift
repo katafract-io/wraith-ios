@@ -125,6 +125,13 @@ struct ConnectView: View {
                 multiHopMode = false
                 return
             }
+            // When switching to single-hop, clear the multi-hop state immediately
+            // so the UI resets (route display, verbiage) without requiring reconnect.
+            if !newValue && vpn.isMultiHop {
+                vpn.isMultiHop = false
+                vpn.multiHopEntryServer = nil
+                vpn.multiHopExitServer = nil
+            }
             hopModeExplicitlySet = true
             if vpn.status == .connected || vpn.status == .connecting {
                 suppressNextHopModeChange = true
