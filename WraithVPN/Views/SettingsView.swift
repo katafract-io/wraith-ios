@@ -1136,16 +1136,8 @@ struct SettingsView: View {
                     }
                 }
             }
-        }
-        .padding(KFSpacing.md)
-        .kfCard()
-    }
 
-    // MARK: - Diagnostics card
-
-    private var diagnosticsCard: some View {
-        VStack(alignment: .leading, spacing: KFSpacing.md) {
-            sectionHeader("Diagnostics")
+            Divider().background(Color.kfBorder)
 
             NavigationLink {
                 AppGroupDiagnosticsView()
@@ -1156,6 +1148,16 @@ struct SettingsView: View {
                         .foregroundStyle(Color.kfTextMuted)
                 }
             }
+        }
+        .padding(KFSpacing.md)
+        .kfCard()
+    }
+
+    // MARK: - Diagnostics card
+
+    private var diagnosticsCard: some View {
+        VStack(alignment: .leading, spacing: KFSpacing.md) {
+            sectionHeader("Diagnostics")
         }
         .padding(KFSpacing.md)
         .kfCard()
