@@ -83,6 +83,43 @@ final class WraithVPNScreenshotTests: XCTestCase {
         snapshot("07_killswitch")
     }
 
+    // MARK: - Frame 08: Connected with live DNS stats + byte counters
+
+    func testCapture08ConnectedStats() {
+        let app = launch(flags: [
+            "--screenshots", "--skip-onboarding", "--mock-subscribed", "--mock-connected",
+            "--mock-dns-stats",
+        ])
+        sleep(4)
+        snapshot("08_connected_stats")
+    }
+
+    // MARK: - Frame 09: Stealth mode active (Shadowsocks fallback engaged)
+
+    func testCapture09Stealth() {
+        let app = launch(flags: [
+            "--screenshots", "--skip-onboarding", "--mock-subscribed",
+            "--mock-connected",
+        ])
+        sleep(4)
+        snapshot("09_stealth")
+    }
+
+    // MARK: - Frame 10: Multi-hop server selection (Sovereign feature)
+
+    func testCapture10MultiHop() {
+        let app = launch(flags: [
+            "--screenshots", "--skip-onboarding", "--mock-subscribed", "--mock-connected",
+            "--mock-regions",
+        ])
+        let regionButton = app.buttons.matching(identifier: "region-button").firstMatch
+        if regionButton.waitForExistence(timeout: 5) {
+            regionButton.tap()
+            sleep(3)
+        }
+        snapshot("10_multihop")
+    }
+
     // MARK: - Helpers
 
     private func launch(flags: [String]) -> XCUIApplication {
