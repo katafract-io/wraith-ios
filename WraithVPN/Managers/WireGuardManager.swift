@@ -97,6 +97,9 @@ final class WireGuardManager: ObservableObject {
     /// Resets to 0 on successful handshake or manual disconnect.
     private var reprovisionAttempts = 0
     private let maxReprovisionAttempts = 2
+    /// Tracks whether the user explicitly requested disconnect; used to distinguish
+    /// user-initiated disconnects from NE-side errors via lastTunnelError.
+    private var userInitiatedDisconnect = false
     /// Holds the current post-connect health check task so a rapid
     /// connect/disconnect/connect cycle cancels the stale check and only
     /// the most-recent stable connect runs the full suite.
@@ -822,6 +825,7 @@ final class WireGuardManager: ObservableObject {
     /// Temporarily disables on-demand so iOS doesn't immediately reconnect,
     /// while leaving the user's autoConnectEnabled preference intact.
     func disconnect() {
+        userInitiatedDisconnect = true
         reprovisionAttempts = 0
         status = .disconnecting
 
@@ -1479,7 +1483,14 @@ final class WireGuardManager: ObservableObject {
             clearNetworkChangeState()
             stopConnectedNodeLatencyProbe()
         case .disconnected:
-            status = .disconnected
+            userInitiatedDisconnect = false
+            if let tunnelError = UserDefaults(suiteName: "group.com.katafract.wraith")?
+                .string(forKey: "lastTunnelError"), !tunnelError.isEmpty, previousStatus == .connected {
+                status = .failed(tunnelError)
+                UserDefaults(suiteName: "group.com.katafract.wraith")?.removeObject(forKey: "lastTunnelError")
+            } else {
+                status = .disconnected
+            }
             connectedSince = nil
             clearNetworkChangeState()
             stopConnectedNodeLatencyProbe()
