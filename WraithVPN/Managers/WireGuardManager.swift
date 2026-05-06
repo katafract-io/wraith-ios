@@ -1061,24 +1061,73 @@ final class WireGuardManager: ObservableObject {
 
     /// Body of the "attempt 2/2" reprovision. Runs in a detached Task so it
     /// completes independently of the cancellable healthCheckTask tree.
+    /// Uses the bypass-tunnel pattern: stop → wait → ephemeral request → start.
     private func performAutoReprovision() async {
-        // Tear down the dead tunnel and re-provision.
-        // Do NOT clear Keychain peerId/nodeId here — provisionAndInstall overwrites
-        // them on success. Clearing eagerly leaves an orphan-state combination
-        // (NE profile present, Keychain peerId nil) when provision fails, which
-        // forces the user to manually reset the VPN config.
+        // WP-A: BypassTunnelClient — use ephemeral session for reprovision
+        // 1. Stop the tunnel to ensure subsequent requests use physical interface
         manager?.connection.stopVPNTunnel()
-        try? await Task.sleep(for: .milliseconds(500))
+
+        // 2. Wait up to 3 seconds for .disconnected before proceeding
+        let maxWaitMS: UInt64 = 3_000
+        let stepMS: UInt64 = 100
+        var waitedMS: UInt64 = 0
+        while waitedMS < maxWaitMS {
+            let s = manager?.connection.status
+            if s == .disconnected || s == .invalid { break }
+            try? await Task.sleep(for: .milliseconds(stepMS))
+            waitedMS += stepMS
+        }
+
         connectedServer = nil
         isProvisioned   = false
 
         do {
+            // 3. Fetch servers and generate new keypair
             let nearest = try await APIClient.shared.fetchNearestServer()
-            try await provisionAndInstall(server: nearest)
+            let pubkey = try ensureKeypair()
+            let label = "WraithVPN-\(UIDevice.current.name.prefix(20))"
+
+            // 4. Use ephemeral session for peer provisioning (bypasses tunnel)
+            let provision = try await APIClient.shared.provisionPeerEphemeral(
+                pubkey: pubkey,
+                regionId: nearest.region,
+                nodeId: nearest.nodeId,
+                label: label
+            )
+
+            // 5. Inject private key and install profile
+            let config = try injectPrivateKey(into: provision.config)
+            let actualServer = await resolveProvisionedServer(provisionNodeId: provision.nodeId,
+                                                              requested: nearest)
+            try await installProfile(configText: config, server: actualServer)
+
+            activePeerId    = provision.peerId
+            assignedIP      = provision.assignedIpv4
+            exitIP          = provision.exitIpv4 ?? (actualServer.ipv4.isEmpty ? nil : actualServer.ipv4)
+            connectedServer = actualServer
+            isProvisioned   = true
+            NotificationCenter.default.post(name: .vpnServerDidChange, object: nil)
+
+            // Save to Keychain
+            try KeychainHelper.shared.save(provision.peerId, for: .activePeerId)
+            try KeychainHelper.shared.save(provision.nodeId, for: .activeNodeId)
+            try KeychainHelper.shared.save(actualServer.region, for: .activeRegion)
+            if !provision.assignedIpv4.isEmpty {
+                try KeychainHelper.shared.save(provision.assignedIpv4, for: .wgAssignedIP)
+            }
+            if let ip = exitIP { try KeychainHelper.shared.save(ip, for: .wgExitIP) }
+
+            // Persist Stealth config
+            persistStealthFallback(provision: provision)
+            if let ip = exitIP {
+                appGroupDefaults?.set(ip, forKey: "wgExitIP")
+            }
+
+            // 6. Reconnect tunnel with new config
             await applyOnDemand(autoConnectEnabled)
             try? await manager?.loadFromPreferences()
             try startTunnel()
-            DebugLogger.shared.wg("Auto-reprovision complete. Tunnel restarted.")
+            DebugLogger.shared.wg("Auto-reprovision complete (bypass-tunnel). Tunnel restarted.")
         } catch {
             DebugLogger.shared.wg("Auto-reprovision FAILED: \(error.localizedDescription)")
             status = .failed("Tunnel dead, re-provision failed: \(error.localizedDescription)")
@@ -1361,7 +1410,7 @@ final class WireGuardManager: ObservableObject {
     private func installProfile(configText: String, server: VPNServer) async throws {
         // 1. Stop any running tunnel (our own or other apps)
         await stopAllActiveTunnels()
-        
+
         // 2. Try to load an existing manager WE own
         let existingOurs: NETunnelProviderManager?
         if let all = try? await NETunnelProviderManager.loadAllFromPreferences() {
@@ -1371,7 +1420,7 @@ final class WireGuardManager: ObservableObject {
         } else {
             existingOurs = nil
         }
-        
+
         let mgr: NETunnelProviderManager
         if let existing = existingOurs {
             // In-place update — no re-approval prompt
@@ -1380,7 +1429,7 @@ final class WireGuardManager: ObservableObject {
             // First install — fresh manager (iOS will show "Allow VPN Configuration")
             mgr = NETunnelProviderManager()
         }
-        
+
         // 3. Build protocol config
         let proto = NETunnelProviderProtocol()
         proto.providerBundleIdentifier = tunnelBundleId
@@ -1391,11 +1440,28 @@ final class WireGuardManager: ObservableObject {
         ]
         proto.includeAllNetworks = (tunnelMode == .full)
         proto.excludeLocalNetworks = true
-        
+
+        // WP-A: BypassTunnelClient — exclude Katafract API IPs from tunnel
+        // so provisioning requests always reach api.katafract.com via physical interface
+        let apiSettings = NEIPv4Settings(addresses: ["0.0.0.0"], subnetMasks: ["0.0.0.0"])
+        apiSettings.isEnabled = true
+
+        // Exclude api.katafract.com IPs (188.114.96.0 and 188.114.97.0)
+        let apiRoute1 = NEIPv4Route.default()
+        apiRoute1.destinationAddress = "188.114.96.0"
+        apiRoute1.destinationSubnetMask = "255.255.255.0"
+
+        let apiRoute2 = NEIPv4Route.default()
+        apiRoute2.destinationAddress = "188.114.97.0"
+        apiRoute2.destinationSubnetMask = "255.255.255.0"
+
+        apiSettings.excludedRoutes = [apiRoute1, apiRoute2]
+        proto.ipv4Settings = apiSettings
+
         mgr.protocolConfiguration = proto
         mgr.localizedDescription = "WraithVPN — \(server.cityName)"
         mgr.isEnabled = true
-        
+
         if autoConnectEnabled {
             let onDemandRule = NEOnDemandRuleConnect()
             onDemandRule.interfaceTypeMatch = .any
@@ -1405,7 +1471,7 @@ final class WireGuardManager: ObservableObject {
             mgr.onDemandRules = []
             mgr.isOnDemandEnabled = false
         }
-        
+
         try await mgr.saveToPreferences()
         try await mgr.loadFromPreferences()
         self.manager = mgr

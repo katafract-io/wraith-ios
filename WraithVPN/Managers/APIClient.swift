@@ -130,11 +130,146 @@ final class APIClient {
         return try await request(APIRequest(.POST, "/v1/peers/provision", body: body, auth: true), baseOverride: provisionURL)
     }
 
+    /// Provisions via an ephemeral URLSession (not the persistent shared session).
+    /// Call this ONLY after stopTunnel + wait for .disconnected to ensure the
+    /// request bypasses any active WireGuard tunnel on the physical interface.
+    ///
+    /// Required sequence before calling:
+    /// 1. `stopTunnel(with: .reconnect)` — tear down the WG tunnel
+    /// 2. `await Task.sleep(for: .seconds(3))` — wait for .disconnected
+    /// 3. Call this method
+    /// 4. `startTunnel(options: newConfig)` — bring tunnel back up
+    func provisionPeerEphemeral(pubkey: String, regionId: String?, nodeId: String? = nil, label: String) async throws -> ProvisionResponse {
+        let body = ProvisionRequest(clientPubkey: pubkey, regionId: regionId, nodeId: nodeId, label: label)
+        let url = provisionURL.appendingPathComponent("/v1/peers/provision")
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("WraithVPN/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+
+        // Attach bearer token
+        guard let token = KeychainHelper.shared.readOptional(for: .subscriptionToken) else {
+            throw APIError.noToken
+        }
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        // Encode body
+        urlRequest.httpBody = try encoder.encode(AnyEncodable(body))
+
+        // Create ephemeral session (not the persistent shared one)
+        let ephemeralConfig = URLSessionConfiguration.ephemeral
+        ephemeralConfig.timeoutIntervalForRequest = 15
+        ephemeralConfig.timeoutIntervalForResource = 60
+        let ephemeralSession = URLSession(configuration: ephemeralConfig)
+
+        // Debug logging
+        Task { @MainActor in
+            DebugLogger.shared.api("POST /v1/peers/provision (ephemeral)")
+        }
+
+        let (data, response) = try await ephemeralSession.data(for: urlRequest)
+        guard let http = response as? HTTPURLResponse else { throw APIError.noData }
+
+        // Debug log response
+        Task { @MainActor in
+            if (200..<300).contains(http.statusCode) {
+                DebugLogger.shared.api("\(http.statusCode) /v1/peers/provision (\(data.count)B)")
+            } else {
+                let excerpt = String(data: data.prefix(200), encoding: .utf8) ?? "<binary>"
+                DebugLogger.shared.api("\(http.statusCode) /v1/peers/provision: \(excerpt)")
+            }
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            let bodyStr = String(data: data, encoding: .utf8) ?? "<binary>"
+
+            // Check for subscription-fatal errors
+            let fatal = ["Invalid token", "Token suspended or expired", "Token expired"]
+            if http.statusCode == 401 || (http.statusCode == 403 && fatal.contains(where: { bodyStr.contains($0) })) {
+                KeychainHelper.shared.delete(for: .subscriptionToken)
+                KeychainHelper.shared.delete(for: .tokenExpiresAt)
+                KeychainHelper.shared.delete(for: .tokenPlan)
+                NotificationCenter.default.post(name: .authTokenInvalidated, object: nil)
+                throw APIError.unauthorized
+            }
+
+            throw APIError.httpError(statusCode: http.statusCode, body: bodyStr)
+        }
+
+        do {
+            return try decoder.decode(ProvisionResponse.self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
+    }
+
     /// Atomically revokes an existing peer and provisions a new one on a different node.
     /// Uses the same device slot — does not consume an additional seat.
     func switchPeer(fromPeerId: String, pubkey: String, regionId: String?, nodeId: String? = nil, label: String) async throws -> ProvisionResponse {
         let body = SwitchPeerRequest(fromPeerId: fromPeerId, regionId: regionId, nodeId: nodeId, label: label, clientPubkey: pubkey)
         return try await request(APIRequest(.POST, "/v1/peers/switch", body: body, auth: true), baseOverride: provisionURL)
+    }
+
+    /// Switches peer via an ephemeral URLSession (not the persistent shared session).
+    /// Call this ONLY after stopTunnel + wait for .disconnected to ensure the
+    /// request bypasses any active WireGuard tunnel on the physical interface.
+    func switchPeerEphemeral(fromPeerId: String, pubkey: String, regionId: String?, nodeId: String? = nil, label: String) async throws -> ProvisionResponse {
+        let body = SwitchPeerRequest(fromPeerId: fromPeerId, regionId: regionId, nodeId: nodeId, label: label, clientPubkey: pubkey)
+        let url = provisionURL.appendingPathComponent("/v1/peers/switch")
+
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.setValue("WraithVPN/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+
+        guard let token = KeychainHelper.shared.readOptional(for: .subscriptionToken) else {
+            throw APIError.noToken
+        }
+        urlRequest.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        urlRequest.httpBody = try encoder.encode(AnyEncodable(body))
+
+        let ephemeralConfig = URLSessionConfiguration.ephemeral
+        ephemeralConfig.timeoutIntervalForRequest = 15
+        ephemeralConfig.timeoutIntervalForResource = 60
+        let ephemeralSession = URLSession(configuration: ephemeralConfig)
+
+        Task { @MainActor in
+            DebugLogger.shared.api("POST /v1/peers/switch (ephemeral)")
+        }
+
+        let (data, response) = try await ephemeralSession.data(for: urlRequest)
+        guard let http = response as? HTTPURLResponse else { throw APIError.noData }
+
+        Task { @MainActor in
+            if (200..<300).contains(http.statusCode) {
+                DebugLogger.shared.api("\(http.statusCode) /v1/peers/switch (\(data.count)B)")
+            } else {
+                let excerpt = String(data: data.prefix(200), encoding: .utf8) ?? "<binary>"
+                DebugLogger.shared.api("\(http.statusCode) /v1/peers/switch: \(excerpt)")
+            }
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            let bodyStr = String(data: data, encoding: .utf8) ?? "<binary>"
+
+            let fatal = ["Invalid token", "Token suspended or expired", "Token expired"]
+            if http.statusCode == 401 || (http.statusCode == 403 && fatal.contains(where: { bodyStr.contains($0) })) {
+                KeychainHelper.shared.delete(for: .subscriptionToken)
+                KeychainHelper.shared.delete(for: .tokenExpiresAt)
+                KeychainHelper.shared.delete(for: .tokenPlan)
+                NotificationCenter.default.post(name: .authTokenInvalidated, object: nil)
+                throw APIError.unauthorized
+            }
+
+            throw APIError.httpError(statusCode: http.statusCode, body: bodyStr)
+        }
+
+        do {
+            return try decoder.decode(ProvisionResponse.self, from: data)
+        } catch {
+            throw APIError.decodingError(error)
+        }
     }
 
     /// Provisions a multi-hop peer pair (entry + exit) for Enclave+ subscribers.
