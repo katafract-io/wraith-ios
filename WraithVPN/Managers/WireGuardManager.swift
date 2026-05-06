@@ -733,15 +733,30 @@ final class WireGuardManager: ObservableObject {
     private func revokeAllPeers() async {
         // Single-hop peer
         if let peerId = activePeerId ?? KeychainHelper.shared.readOptional(for: .activePeerId) {
-            try? await APIClient.shared.deletePeer(peerId: peerId)
+            do {
+                try await APIClient.shared.deletePeer(peerId: peerId)
+            } catch {
+                DebugLogger.shared.peer("⚠️ [revokeAllPeers] single-hop deletePeer failed: \(error)")
+                await TelemetryManager.shared.recordSilentError()
+            }
         }
         // Multi-hop entry peer
         if let peerId = KeychainHelper.shared.readOptional(for: .multiHopEntryPeerId) {
-            try? await APIClient.shared.deletePeer(peerId: peerId)
+            do {
+                try await APIClient.shared.deletePeer(peerId: peerId)
+            } catch {
+                DebugLogger.shared.peer("⚠️ [revokeAllPeers] entry-peer deletePeer failed: \(error)")
+                await TelemetryManager.shared.recordSilentError()
+            }
         }
         // Multi-hop exit peer
         if let peerId = KeychainHelper.shared.readOptional(for: .multiHopExitPeerId) {
-            try? await APIClient.shared.deletePeer(peerId: peerId)
+            do {
+                try await APIClient.shared.deletePeer(peerId: peerId)
+            } catch {
+                DebugLogger.shared.peer("⚠️ [revokeAllPeers] exit-peer deletePeer failed: \(error)")
+                await TelemetryManager.shared.recordSilentError()
+            }
         }
         clearPeerState()
     }
@@ -1410,12 +1425,20 @@ final class WireGuardManager: ObservableObject {
             }
             mgr.isOnDemandEnabled = enabled
             try await mgr.saveToPreferences()
-        } catch {}
+        } catch {
+            DebugLogger.shared.ne("⚠️ [applyOnDemand] silently failed: \(error)")
+            await TelemetryManager.shared.recordSilentError()
+        }
     }
 
     private func removeProfile() async {
         guard let mgr = manager else { return }
-        try? await mgr.removeFromPreferences()
+        do {
+            try await mgr.removeFromPreferences()
+        } catch {
+            DebugLogger.shared.ne("⚠️ [removeProfile] silently failed: \(error)")
+            await TelemetryManager.shared.recordSilentError()
+        }
         manager = nil
     }
 

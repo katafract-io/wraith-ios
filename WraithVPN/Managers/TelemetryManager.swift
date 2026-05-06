@@ -8,6 +8,7 @@ final class TelemetryManager {
     private var currentSession: SessionState?
     private var pollTask: Task<Void, Never>?
     private let pollInterval: TimeInterval = 30
+    private(set) var silentErrorCount: Int = 0
 
     private struct SessionState {
         let startTime: Date
@@ -38,6 +39,10 @@ final class TelemetryManager {
 
     func recordReprovision() {
         currentSession?.reprovisionCount += 1
+    }
+
+    func recordSilentError() {
+        silentErrorCount += 1
     }
 
     func sessionEnded(connection: NETunnelProviderSession?) async {
