@@ -59,6 +59,8 @@ final class WireGuardManager: ObservableObject {
     @Published var multiHopEntryServer: VPNServer? = nil
     /// Exit node for the active multi-hop session (same as connectedServer for multi-hop).
     @Published var multiHopExitServer: VPNServer? = nil
+    /// Live latency to the currently connected node in milliseconds.
+    @Published var latencyMs: Int? = nil
 
     // MARK: - Private
 
@@ -128,6 +130,8 @@ final class WireGuardManager: ObservableObject {
     /// Holds the scheduled network-change reassert check task so it can be cancelled
     /// if status returns to .connected before the 10s timeout fires.
     private var networkChangeCheckTask: DispatchWorkItem?
+    /// Tracks the periodic latency probe task for the connected node (30s interval).
+    private var connectedNodeLatencyTask: Task<Void, Never>?
 
     // MARK: - Init / lifecycle
 
@@ -185,6 +189,7 @@ final class WireGuardManager: ObservableObject {
         latencyReportTask?.cancel()
         periodicTask?.cancel()
         networkChangeCheckTask?.cancel()
+        connectedNodeLatencyTask?.cancel()
     }
 
     // MARK: - Public interface
@@ -438,6 +443,91 @@ final class WireGuardManager: ObservableObject {
         guard let hint = info.preferredNode else { return }
         DebugLogger.shared.peer("Layer2 probe: hint received → \(hint.nodeId) (\(hint.reason))")
         await applyPreferredNodeIfIdle(hint)
+    }
+
+    // MARK: - Connected node latency probe
+
+    /// Starts periodic probing of the currently connected node. Runs every 30s while connected.
+    private func startConnectedNodeLatencyProbe() {
+        connectedNodeLatencyTask?.cancel()
+        connectedNodeLatencyTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.probeConnectedNodeLatency()
+                try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+            }
+        }
+        // Fire the first probe immediately so the user sees latency ~1-2s after connect
+        Task {
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled else { return }
+            await probeConnectedNodeLatency()
+        }
+    }
+
+    /// Stops the periodic latency probe and clears the latencyMs value.
+    private func stopConnectedNodeLatencyProbe() {
+        connectedNodeLatencyTask?.cancel()
+        connectedNodeLatencyTask = nil
+        latencyMs = nil
+    }
+
+    /// Probes the currently connected node's latency via TCP port 443.
+    private func probeConnectedNodeLatency() async {
+        guard let nodeId = connectedServer?.nodeId else { return }
+        let host = "\(nodeId).vpn.katafract.com"
+        if let ms = await probeTCP(host: host, port: 443) {
+            DispatchQueue.main.async { [weak self] in
+                self?.latencyMs = Int(ms.rounded())
+            }
+        }
+    }
+
+    /// Performs a single TCP probe to the given host and port. Returns latency in milliseconds.
+    private func probeTCP(host: String, port: UInt16) async -> Double? {
+        let endpoint = NWEndpoint.hostPort(
+            host: NWEndpoint.Host(host),
+            port: NWEndpoint.Port(rawValue: port)!
+        )
+        let params = NWParameters.tcp
+        params.prohibitedInterfaceTypes = [.other]
+        let connection = NWConnection(to: endpoint, using: params)
+
+        return await withCheckedContinuation { continuation in
+            let start = Date()
+            let finishLock = NSLock()
+            nonisolated(unsafe) var finished = false
+            nonisolated(unsafe) var timeout: DispatchWorkItem?
+
+            @Sendable func finish(with result: Double?) {
+                finishLock.lock()
+                defer { finishLock.unlock() }
+                guard !finished else { return }
+                finished = true
+                timeout?.cancel()
+                if result == nil { connection.cancel() }
+                continuation.resume(returning: result)
+            }
+
+            timeout = DispatchWorkItem { finish(with: nil) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3.0, execute: timeout!)
+
+            connection.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    let ms = Date().timeIntervalSince(start) * 1000
+                    connection.cancel()
+                    finish(with: ms)
+                case .failed:
+                    finish(with: nil)
+                case .cancelled:
+                    finish(with: nil)
+                default:
+                    break
+                }
+            }
+            connection.start(queue: .global(qos: .utility))
+        }
     }
 
     // MARK: - Phase E2.2 latency reporting
@@ -1387,10 +1477,12 @@ final class WireGuardManager: ObservableObject {
             status = .disconnected
             connectedSince = nil
             clearNetworkChangeState()
+            stopConnectedNodeLatencyProbe()
         case .disconnected:
             status = .disconnected
             connectedSince = nil
             clearNetworkChangeState()
+            stopConnectedNodeLatencyProbe()
         case .connecting:
             status = .connecting
             connectedSince = nil
@@ -1402,11 +1494,13 @@ final class WireGuardManager: ObservableObject {
             // resets the counter when it confirms the tunnel is actually routing traffic.
             // SS engagement is now gated on healthy WG (see postConnectHealthCheck).
             clearNetworkChangeState()
+            startConnectedNodeLatencyProbe()
         case .reasserting:
             status = .connecting
         case .disconnecting:
             status = .disconnecting
             connectedSince = nil
+            stopConnectedNodeLatencyProbe()
         @unknown default:
             status = .disconnected
             connectedSince = nil

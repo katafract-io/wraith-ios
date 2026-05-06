@@ -489,11 +489,15 @@ struct ConnectView: View {
                             : (servers.selectedServer?.cityName ?? "Automatic"),
                         icon: (simpleMode && vpn.connectedServer == nil) ? "sparkles" : "location.north.line.fill"
                     )
-                    summaryPill(
-                        title: "Mode",
-                        value: vpn.status == .connected ? "Protected" : "Standby",
-                        icon: vpn.status == .connected ? "shield.fill" : "moon.stars.fill"
-                    )
+                    if vpn.status == .connected, let latency = vpn.latencyMs {
+                        latencyPill(latency: latency)
+                    } else {
+                        summaryPill(
+                            title: "Mode",
+                            value: vpn.status == .connected ? "Protected" : "Standby",
+                            icon: vpn.status == .connected ? "shield.fill" : "moon.stars.fill"
+                        )
+                    }
                 }
                 if !simpleMode {
                     summaryPill(
@@ -538,6 +542,48 @@ struct ConnectView: View {
             RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous)
                 .stroke(Color.kfBorder, lineWidth: 1)
         )
+    }
+
+    private func latencyPill(latency: Int) -> some View {
+        let color: Color
+        if latency < 80 {
+            color = Color(hex: "#10b981")
+        } else if latency < 150 {
+            color = Color(hex: "#f59e0b")
+        } else {
+            color = Color(hex: "#ef4444")
+        }
+
+        return HStack(spacing: KFSpacing.sm) {
+            Image(systemName: "wifi")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 28, height: 28)
+                .background(color.opacity(0.12))
+                .clipShape(Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("LATENCY")
+                    .font(KFFont.caption(10, weight: .bold))
+                    .kerning(1.2)
+                    .foregroundStyle(Color.kfTextMuted)
+                Text("\(latency)ms")
+                    .font(KFFont.body(14))
+                    .foregroundStyle(.white)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(KFSpacing.sm)
+        .frame(maxWidth: .infinity)
+        .background(Color.kfSurface.opacity(0.92))
+        .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous)
+                .stroke(Color.kfBorder, lineWidth: 1)
+        )
+        .transition(.scale.combined(with: .opacity))
+        .animation(.easeInOut(duration: 0.2), value: latency)
     }
 
     // MARK: - Server button
