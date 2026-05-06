@@ -1483,9 +1483,10 @@ final class WireGuardManager: ObservableObject {
             clearNetworkChangeState()
             stopConnectedNodeLatencyProbe()
         case .disconnected:
+            let wasUserInitiated = userInitiatedDisconnect
             userInitiatedDisconnect = false
             if let tunnelError = UserDefaults(suiteName: "group.com.katafract.wraith")?
-                .string(forKey: "lastTunnelError"), !tunnelError.isEmpty, previousStatus == .connected {
+                .string(forKey: "lastTunnelError"), !tunnelError.isEmpty, previousStatus == .connected, !wasUserInitiated {
                 status = .failed(tunnelError)
                 UserDefaults(suiteName: "group.com.katafract.wraith")?.removeObject(forKey: "lastTunnelError")
             } else {
