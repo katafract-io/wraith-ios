@@ -59,6 +59,8 @@ final class WireGuardManager: ObservableObject {
     @Published var multiHopEntryServer: VPNServer? = nil
     /// Exit node for the active multi-hop session (same as connectedServer for multi-hop).
     @Published var multiHopExitServer: VPNServer? = nil
+    /// Last WireGuard handshake age in seconds. Updated every 5s when connected.
+    @Published var lastHandshakeAge: Int? = nil
 
     // MARK: - Private
 
@@ -128,6 +130,8 @@ final class WireGuardManager: ObservableObject {
     /// Holds the scheduled network-change reassert check task so it can be cancelled
     /// if status returns to .connected before the 10s timeout fires.
     private var networkChangeCheckTask: DispatchWorkItem?
+    /// Polling task for WireGuard handshake age (every 5s when connected).
+    private var handshakeAgeTask: Task<Void, Never>?
 
     // MARK: - Init / lifecycle
 
@@ -185,6 +189,7 @@ final class WireGuardManager: ObservableObject {
         latencyReportTask?.cancel()
         periodicTask?.cancel()
         networkChangeCheckTask?.cancel()
+        handshakeAgeTask?.cancel()
     }
 
     // MARK: - Public interface
@@ -1363,6 +1368,68 @@ final class WireGuardManager: ObservableObject {
         try connection.startTunnel(options: nil)
     }
 
+    // MARK: - Handshake age polling
+
+    /// Starts polling for WireGuard handshake age every 5 seconds while connected.
+    private func startHandshakeAgePolling() {
+        handshakeAgeTask?.cancel()
+        handshakeAgeTask = Task {
+            while !Task.isCancelled {
+                await updateHandshakeAge()
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+    }
+
+    /// Stops polling for handshake age.
+    private func stopHandshakeAgePolling() {
+        handshakeAgeTask?.cancel()
+        handshakeAgeTask = nil
+        lastHandshakeAge = nil
+    }
+
+    /// Fetches WireGuard stats and updates lastHandshakeAge.
+    private func updateHandshakeAge() async {
+        guard let session = tunnelProviderSession else { return }
+        let configText: String? = await withCheckedContinuation { continuation in
+            var completed = false
+            let lock = NSLock()
+            func finish(_ value: String?) {
+                lock.lock()
+                guard !completed else { lock.unlock(); return }
+                completed = true
+                lock.unlock()
+                continuation.resume(returning: value)
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3) { finish(nil) }
+            do {
+                try session.sendProviderMessage(Data([0])) { response in
+                    guard let data = response else { finish(nil); return }
+                    finish(String(data: data, encoding: .utf8))
+                }
+            } catch {
+                finish(nil)
+            }
+        }
+
+        guard let configText = configText else { return }
+        var lastHandshakeTimeSec: Int64 = 0
+        for line in configText.split(separator: "\n", omittingEmptySubsequences: true) {
+            let parts = line.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let key = String(parts[0]).trimmingCharacters(in: .whitespaces)
+            let value = String(parts[1]).trimmingCharacters(in: .whitespaces)
+            if key == "last_handshake_time_sec" {
+                lastHandshakeTimeSec = Int64(value) ?? 0
+                break
+            }
+        }
+
+        let now = Int64(Date().timeIntervalSince1970)
+        let age = max(0, Int(now - lastHandshakeTimeSec))
+        self.lastHandshakeAge = age
+    }
+
     // MARK: - Status observation
 
     private func observeStatus() {
@@ -1386,10 +1453,12 @@ final class WireGuardManager: ObservableObject {
         case .invalid:
             status = .disconnected
             connectedSince = nil
+            stopHandshakeAgePolling()
             clearNetworkChangeState()
         case .disconnected:
             status = .disconnected
             connectedSince = nil
+            stopHandshakeAgePolling()
             clearNetworkChangeState()
         case .connecting:
             status = .connecting
@@ -1397,6 +1466,7 @@ final class WireGuardManager: ObservableObject {
         case .connected:
             if connectedSince == nil { connectedSince = connection.connectedDate ?? Date() }
             status = .connected
+            startHandshakeAgePolling()
             // Do NOT reset reprovisionAttempts here — .connected just means the NE
             // extension started, NOT that the WG handshake succeeded. The health check
             // resets the counter when it confirms the tunnel is actually routing traffic.
@@ -1407,9 +1477,11 @@ final class WireGuardManager: ObservableObject {
         case .disconnecting:
             status = .disconnecting
             connectedSince = nil
+            stopHandshakeAgePolling()
         @unknown default:
             status = .disconnected
             connectedSince = nil
+            stopHandshakeAgePolling()
             clearNetworkChangeState()
         }
 

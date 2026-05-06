@@ -481,26 +481,42 @@ struct ConnectView: View {
                     icon: vpn.status == .connected ? "shield.fill" : "moon.stars.fill"
                 )
             } else {
-                HStack(spacing: KFSpacing.md) {
-                    summaryPill(
-                        title: "Route",
-                        value: simpleMode
-                            ? (vpn.connectedServer?.cityName ?? "Automatic")
-                            : (servers.selectedServer?.cityName ?? "Automatic"),
-                        icon: (simpleMode && vpn.connectedServer == nil) ? "sparkles" : "location.north.line.fill"
-                    )
-                    summaryPill(
-                        title: "Mode",
-                        value: vpn.status == .connected ? "Protected" : "Standby",
-                        icon: vpn.status == .connected ? "shield.fill" : "moon.stars.fill"
-                    )
-                }
-                if !simpleMode {
-                    summaryPill(
-                        title: "Kill Switch",
-                        value: vpn.tunnelMode == .full ? "On" : "Off",
-                        icon: vpn.tunnelMode == .full ? "lock.shield.fill" : "lock.shield"
-                    )
+                VStack(spacing: KFSpacing.xs) {
+                    HStack(spacing: KFSpacing.md) {
+                        summaryPill(
+                            title: "Route",
+                            value: simpleMode
+                                ? (vpn.connectedServer?.cityName ?? "Automatic")
+                                : (servers.selectedServer?.cityName ?? "Automatic"),
+                            icon: (simpleMode && vpn.connectedServer == nil) ? "sparkles" : "location.north.line.fill"
+                        )
+                        summaryPill(
+                            title: "Mode",
+                            value: vpn.status == .connected ? "Protected" : "Standby",
+                            icon: vpn.status == .connected ? "shield.fill" : "moon.stars.fill"
+                        )
+                    }
+
+                    if vpn.status == .connected,
+                       let age = vpn.lastHandshakeAge,
+                       age > 30 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text("↻ \(age)s ago")
+                                .font(KFFont.caption(10))
+                        }
+                        .foregroundStyle(Color.kfTextMuted.opacity(0.7))
+                        .padding(.horizontal, KFSpacing.sm)
+                    }
+
+                    if !simpleMode {
+                        summaryPill(
+                            title: "Kill Switch",
+                            value: vpn.tunnelMode == .full ? "On" : "Off",
+                            icon: vpn.tunnelMode == .full ? "lock.shield.fill" : "lock.shield"
+                        )
+                    }
                 }
             }
         }
