@@ -34,6 +34,7 @@ struct SettingsView: View {
     @State private var isLinkingIdentity = false
     @State private var identityLinked = UserDefaults.standard.bool(forKey: "identityLinked")
     @State private var identityLinkError: String? = nil
+    @State private var identityLinkSuccess = false
     @State private var showSeatPurchaseError = false
     @State private var tokenVisible  = false
     @State private var tokenCopied   = false
@@ -999,14 +1000,22 @@ struct SettingsView: View {
                         Text("Link Recovery Identity")
                             .font(KFFont.heading(20))
                             .foregroundStyle(.white)
-                        Text("Optional — but if you ever lose your token and aren't on the App Store, this is how we get you back in.")
-                            .font(KFFont.caption(13))
-                            .foregroundStyle(Color.kfTextSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        if !identityLinkSuccess {
+                            Text("Optional — but if you ever lose your token and aren't on the App Store, this is how we get you back in.")
+                                .font(KFFont.caption(13))
+                                .foregroundStyle(Color.kfTextSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            Text("Confirmation sent. Check your inbox.")
+                                .font(KFFont.caption(13))
+                                .foregroundStyle(Color.kfConnected)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer()
                     Button {
                         showIdentityLink = false
+                        identityLinkSuccess = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 24))
@@ -1014,52 +1023,105 @@ struct SettingsView: View {
                     }
                 }
 
-                TextField("your@email.com", text: $identityLinkEmail)
-                    .font(KFFont.body(15))
-                    .foregroundStyle(Color.kfTextPrimary)
-                    .autocapitalization(.none)
-                    .keyboardType(.emailAddress)
-                    .padding(KFSpacing.sm)
-                    .background(Color.kfSurfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous).stroke(Color.kfBorder, lineWidth: 1))
+                if !identityLinkSuccess {
+                    TextField("your@email.com", text: $identityLinkEmail)
+                        .font(KFFont.body(15))
+                        .foregroundStyle(Color.kfTextPrimary)
+                        .autocapitalization(.none)
+                        .keyboardType(.emailAddress)
+                        .padding(KFSpacing.sm)
+                        .background(Color.kfSurfaceElevated)
+                        .clipShape(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: KFRadius.md, style: .continuous).stroke(Color.kfBorder, lineWidth: 1))
 
-                if let err = identityLinkError {
-                    Text(err)
-                        .font(KFFont.caption(12))
-                        .foregroundStyle(Color.kfError)
-                }
-
-                Button {
-                    Task {
-                        isLinkingIdentity = true
-                        identityLinkError = nil
-                        defer { isLinkingIdentity = false }
-                        do {
-                            let _ = try await APIClient.shared.linkIdentity(type: "email", value: identityLinkEmail.trimmingCharacters(in: .whitespacesAndNewlines))
-                            UserDefaults.standard.set(true, forKey: "identityLinked")
-                            identityLinked = true
-                            showIdentityLink = false
-                        } catch {
-                            identityLinkError = "Failed to link: \(error.localizedDescription)"
-                        }
+                    if !identityLinkEmail.isEmpty && !isValidEmail {
+                        Text("Enter a valid email address")
+                            .font(KFFont.caption(12))
+                            .foregroundStyle(Color.kfError)
                     }
-                } label: {
-                    Group {
-                        if isLinkingIdentity {
-                            KataProgressRing()
-                        } else {
-                            Text("Link Email")
-                                .font(KFFont.body(15))
+
+                    if let err = identityLinkError {
+                        Text(err)
+                            .font(KFFont.caption(12))
+                            .foregroundStyle(Color.kfError)
+                    }
+
+                    Button {
+                        Task {
+                            isLinkingIdentity = true
+                            identityLinkError = nil
+                            defer { isLinkingIdentity = false }
+                            do {
+                                let _ = try await APIClient.shared.linkIdentity(type: "email", value: identityLinkEmail.trimmingCharacters(in: .whitespacesAndNewlines))
+                                identityLinkSuccess = true
+                                UserDefaults.standard.set(true, forKey: "identityLinked")
+                                identityLinked = true
+                            } catch {
+                                identityLinkError = "Failed to link: \(error.localizedDescription)"
+                            }
+                        }
+                    } label: {
+                        Group {
+                            if isLinkingIdentity {
+                                KataProgressRing()
+                            } else {
+                                Text("Link Email")
+                                    .font(KFFont.body(15))
+                                    .foregroundStyle(.white)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, KFSpacing.sm)
+                        .background(!isValidEmail || isLinkingIdentity ? Color.kfAccentBlue.opacity(0.4) : Color.kfAccentBlue)
+                        .clipShape(RoundedRectangle(cornerRadius: KFRadius.lg, style: .continuous))
+                    }
+                    .disabled(!isValidEmail || isLinkingIdentity)
+                } else {
+                    VStack(alignment: .leading, spacing: KFSpacing.md) {
+                        HStack(spacing: KFSpacing.sm) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 18))
+                                .foregroundStyle(Color.kfConnected)
+                            Text(identityLinkEmail)
+                                .font(KFFont.body(14))
                                 .foregroundStyle(.white)
                         }
+
+                        Button {
+                            Task {
+                                isLinkingIdentity = true
+                                identityLinkError = nil
+                                defer { isLinkingIdentity = false }
+                                do {
+                                    let _ = try await APIClient.shared.linkIdentity(type: "email", value: identityLinkEmail.trimmingCharacters(in: .whitespacesAndNewlines))
+                                } catch {
+                                    identityLinkError = "Failed to resend: \(error.localizedDescription)"
+                                }
+                            }
+                        } label: {
+                            Group {
+                                if isLinkingIdentity {
+                                    KataProgressRing()
+                                } else {
+                                    Text("Resend")
+                                        .font(KFFont.body(15))
+                                        .foregroundStyle(.white)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, KFSpacing.sm)
+                            .background(isLinkingIdentity ? Color.kfAccentBlue.opacity(0.4) : Color.kfAccentBlue)
+                            .clipShape(RoundedRectangle(cornerRadius: KFRadius.lg, style: .continuous))
+                        }
+                        .disabled(isLinkingIdentity)
+
+                        if let err = identityLinkError {
+                            Text(err)
+                                .font(KFFont.caption(12))
+                                .foregroundStyle(Color.kfError)
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, KFSpacing.sm)
-                    .background(identityLinkEmail.isEmpty || isLinkingIdentity ? Color.kfAccentBlue.opacity(0.4) : Color.kfAccentBlue)
-                    .clipShape(RoundedRectangle(cornerRadius: KFRadius.lg, style: .continuous))
                 }
-                .disabled(identityLinkEmail.isEmpty || isLinkingIdentity)
 
                 Spacer()
             }
@@ -1177,6 +1239,12 @@ struct SettingsView: View {
     }
 
     // MARK: - Helpers
+
+    private var isValidEmail: Bool {
+        let pattern = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+        let predicate = NSPredicate(format: "SELF MATCHES %@", pattern)
+        return predicate.evaluate(with: identityLinkEmail.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title.uppercased())
