@@ -17,6 +17,7 @@ import NetworkExtension
 import Network
 import Combine
 import CryptoKit
+import UserNotifications
 
 // MARK: - Manager
 
@@ -81,6 +82,7 @@ final class WireGuardManager: ObservableObject {
     private var previousStatus: VPNStatus = .disconnected
     private let tunnelBundleId = "com.katafract.wraith.tunnel"
     private let appGroupDefaults = UserDefaults(suiteName: "group.com.katafract.wraith")
+    private var userInitiatedDisconnect = false
     /// True while any provision/switch is in-flight. Published so the UI can
     /// disable the connect button and show a loading state during provisioning.
     @Published private(set) var isProvisioning = false
@@ -182,6 +184,7 @@ final class WireGuardManager: ObservableObject {
 #endif
         startNetworkMonitor()
         startPeriodicLoop()
+        userInitiatedDisconnect = false
     }
 
     deinit {
@@ -843,6 +846,7 @@ final class WireGuardManager: ObservableObject {
         userInitiatedDisconnect = true
         reprovisionAttempts = 0
         status = .disconnecting
+        userInitiatedDisconnect = true
 
         // Cancel any in-flight connect Task (provision/switch) so the UI responds immediately
         connectTask?.cancel()
@@ -1612,6 +1616,17 @@ final class WireGuardManager: ObservableObject {
             // SS engagement is now gated on healthy WG (see postConnectHealthCheck).
             clearNetworkChangeState()
             startConnectedNodeLatencyProbe()
+
+            // Request notification permission after first successful connect
+            if appGroupDefaults?.bool(forKey: "hasConnectedOnce") != true {
+                appGroupDefaults?.set(true, forKey: "hasConnectedOnce")
+                Task {
+                    await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+                }
+            }
+
+            // Reset user-initiated disconnect flag on successful connect
+            userInitiatedDisconnect = false
         case .reasserting:
             status = .connecting
         case .disconnecting:
@@ -1642,6 +1657,22 @@ final class WireGuardManager: ObservableObject {
                 DebugLogger.shared.ne("NE error: \(tunnelError)")
             }
             healthReport = nil
+
+            // Send notification on unexpected tunnel drop (not user-initiated)
+            if !userInitiatedDisconnect && previousStatus == .connected {
+                Task {
+                    let content = UNMutableNotificationContent()
+                    content.title = "VPN Disconnected"
+                    content.body = "Your Enclave tunnel dropped. Tap to reconnect."
+                    content.sound = .default
+                    // Use a deeplink to the connect action
+                    content.userInfo = ["action": "reconnect"]
+
+                    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+                    let request = UNNotificationRequest(identifier: "tunnel-drop-\(UUID().uuidString)", content: content, trigger: trigger)
+                    try? await UNUserNotificationCenter.current().add(request)
+                }
+            }
         }
         if status == .connecting && previousStatus != .connecting {
             DebugLogger.shared.ne("Tunnel status -> connecting")
