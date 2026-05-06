@@ -97,7 +97,11 @@ struct ConnectView: View {
             syncSelectedToConnected()
         }
         .onChange(of: vpn.isMultiHop) { _, newValue in
-            if newValue { multiHopMode = true }
+            if newValue {
+                multiHopMode = true
+            } else {
+                multiHopMode = false
+            }
         }
         .onChange(of: vpn.status) { _, newStatus in
             guard newStatus == .disconnected, let pending = pendingHopMode else { return }
@@ -105,6 +109,12 @@ struct ConnectView: View {
             suppressNextHopModeChange = true
             multiHopMode = pending
             hopModeExplicitlySet = true
+            // Clear multi-hop state when switching to single-hop
+            if !pending && vpn.isMultiHop {
+                vpn.isMultiHop = false
+                vpn.multiHopEntryServer = nil
+                vpn.multiHopExitServer = nil
+            }
             if pending {
                 showMultiHopPicker = true
             } else {
