@@ -410,6 +410,22 @@ struct ConnectView: View {
                     .overlay(Capsule().stroke(Color.orange.opacity(0.45), lineWidth: 0.5))
                     .transition(.scale.combined(with: .opacity))
                     .animation(.easeInOut(duration: 0.3), value: vpn.activeTransport)
+                } else {
+                    // Show protocol indicator when not using Stealth
+                    HStack(spacing: 4) {
+                        Image(systemName: vpn.isMultiHop ? "arrow.triangle.2.circlepath" : "network")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(protocolIndicator)
+                            .font(.kataMono(10))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.kfAccentBlue.opacity(0.15))
+                    .foregroundStyle(Color.kfAccentBlue)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(Color.kfAccentBlue.opacity(0.35), lineWidth: 0.5))
+                    .transition(.scale.combined(with: .opacity))
+                    .animation(.easeInOut(duration: 0.3), value: vpn.isMultiHop)
                 }
             } else {
                 Text(storeKit.isHavenOnly ? "DNS Protected" : vpn.status.label)
@@ -717,6 +733,16 @@ struct ConnectView: View {
     }
 
     // MARK: - Computed helpers
+
+    private var protocolIndicator: String {
+        if vpn.activeTransport == .shadowsocks {
+            return "Stealth (Hysteria 2)"
+        } else if vpn.isMultiHop {
+            return "Multi-hop WireGuard"
+        } else {
+            return "WireGuard"
+        }
+    }
 
     private var statusCaption: String {
         if storeKit.isHavenOnly {
