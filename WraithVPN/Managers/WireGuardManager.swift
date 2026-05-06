@@ -120,6 +120,14 @@ final class WireGuardManager: ObservableObject {
     /// Periodic (30 min) background loop — fires latency reporting and Layer 2
     /// probes while foregrounded. Cancelled on deinit.
     private var periodicTask: Task<Void, Never>?
+    /// Timestamp of when a network path change was detected while connected.
+    /// Used to trigger an auto-reconnect if the tunnel stays in .reasserting for >10s.
+    private var networkChangeTime: Date?
+    /// Guard to prevent multiple restart attempts for the same network change event.
+    private var networkChangeReassertingRestarted = false
+    /// Holds the scheduled network-change reassert check task so it can be cancelled
+    /// if status returns to .connected before the 10s timeout fires.
+    private var networkChangeCheckTask: DispatchWorkItem?
 
     // MARK: - Init / lifecycle
 
@@ -176,6 +184,7 @@ final class WireGuardManager: ObservableObject {
         networkMonitor?.cancel()
         latencyReportTask?.cancel()
         periodicTask?.cancel()
+        networkChangeCheckTask?.cancel()
     }
 
     // MARK: - Public interface
@@ -436,6 +445,8 @@ final class WireGuardManager: ObservableObject {
     /// Starts observing the client's current network interface class so every
     /// latency report tags the right bucket (wifi / cellular / wired). Also
     /// fires a debounced report on every path transition.
+    /// Also triggers a tunnel restart if the tunnel enters .reasserting for >10s
+    /// after a network change while connected.
     private func startNetworkMonitor() {
         let monitor = NWPathMonitor()
         networkMonitor = monitor
@@ -456,6 +467,15 @@ final class WireGuardManager: ObservableObject {
                 self.currentNetClass = newClass
                 if changed {
                     self.scheduleLatencyReport(reason: "net-change")
+
+                    // When network path changes while connected, prepare for a potential
+                    // reconnect if the tunnel stalls in .reasserting. Set the timestamp
+                    // and schedule a 10s check.
+                    if case .connected = self.status {
+                        self.networkChangeTime = Date()
+                        self.networkChangeReassertingRestarted = false
+                        self.scheduleNetworkChangeReassertCheck()
+                    }
                 }
             }
         }
@@ -477,6 +497,33 @@ final class WireGuardManager: ObservableObject {
         }
     }
 
+    /// Schedules a check 10 seconds after a network change to see if the tunnel
+    /// is still stuck in .reasserting. If so, triggers a tunnel restart.
+    private func scheduleNetworkChangeReassertCheck() {
+        networkChangeCheckTask?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.checkAndRestartIfReassertingAfterNetworkChange()
+            }
+        }
+        networkChangeCheckTask = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: workItem)
+    }
+
+    /// Checks if the tunnel is stuck in .reasserting after a network change.
+    /// If so, and if it's been > 10s since the network change, restarts the tunnel.
+    /// Only triggers once per network change event (guarded by networkChangeReassertingRestarted).
+    private func checkAndRestartIfReassertingAfterNetworkChange() {
+        guard !networkChangeReassertingRestarted,
+              let changeTime = networkChangeTime,
+              Date().timeIntervalSince(changeTime) > 10,
+              case .connecting = status else { return }
+
+        // Assuming .reasserting maps to .connecting in the VPNStatus enum
+        networkChangeReassertingRestarted = true
+        DebugLogger.shared.ne("Network change: tunnel reasserting >10s, restarting...")
+        manager?.connection.startVPNTunnel()
+    }
 
     /// Debounced wrapper around `runLatencyReport` — collapses rapid triggers
     /// (network change + foreground in quick succession) into a single probe.
@@ -1339,9 +1386,11 @@ final class WireGuardManager: ObservableObject {
         case .invalid:
             status = .disconnected
             connectedSince = nil
+            clearNetworkChangeState()
         case .disconnected:
             status = .disconnected
             connectedSince = nil
+            clearNetworkChangeState()
         case .connecting:
             status = .connecting
             connectedSince = nil
@@ -1352,6 +1401,7 @@ final class WireGuardManager: ObservableObject {
             // extension started, NOT that the WG handshake succeeded. The health check
             // resets the counter when it confirms the tunnel is actually routing traffic.
             // SS engagement is now gated on healthy WG (see postConnectHealthCheck).
+            clearNetworkChangeState()
         case .reasserting:
             status = .connecting
         case .disconnecting:
@@ -1360,6 +1410,7 @@ final class WireGuardManager: ObservableObject {
         @unknown default:
             status = .disconnected
             connectedSince = nil
+            clearNetworkChangeState()
         }
 
         // Post notifications for VPN state changes
@@ -1385,6 +1436,15 @@ final class WireGuardManager: ObservableObject {
             DebugLogger.shared.ne("Tunnel status -> connecting")
         }
         previousStatus = status
+    }
+
+    /// Clears network change tracking state. Called when tunnel reaches .connected
+    /// again or disconnects, to reset for the next network change event.
+    private func clearNetworkChangeState() {
+        networkChangeCheckTask?.cancel()
+        networkChangeCheckTask = nil
+        networkChangeTime = nil
+        networkChangeReassertingRestarted = false
     }
 }
 
