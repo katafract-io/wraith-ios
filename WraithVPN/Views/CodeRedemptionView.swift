@@ -107,7 +107,12 @@ struct CodeRedemptionView: View {
 
 struct SignInRestoreView: View {
     @Environment(\.dismiss) private var dismiss
+    @State private var email = ""
+    @State private var recoveryCode = ""
     @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var showErrorAlert = false
+    @State private var emailSent = false
 
     var body: some View {
         NavigationStack {
@@ -117,34 +122,15 @@ struct SignInRestoreView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
 
-                Text("Sign in with your Katafract account to restore an existing Enclave or Sovereign subscription on this device.")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal)
-
-                VStack(spacing: 12) {
-                    Button(action: handleSignIn) {
-                        if isLoading {
-                            ProgressView()
-                                .tint(Color.kataGold)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                        } else {
-                            Text("Sign In with Katafract")
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(Color.kataGold)
-                                .foregroundStyle(.black)
-                                .font(.system(size: 16, weight: .semibold))
-                        }
-                    }
-                    .disabled(isLoading)
+                if emailSent {
+                    recoveryCodeView
+                } else {
+                    emailInputView
                 }
-                .padding()
 
                 Spacer()
 
-                Text("You'll be redirected to the Katafract auth portal.")
+                Text("Check your email within 10 minutes for the recovery code.")
                     .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(.tertiary)
                     .padding()
@@ -158,16 +144,136 @@ struct SignInRestoreView: View {
             }
             .preferredColorScheme(.dark)
         }
+        .alert("Error", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage ?? "An unknown error occurred")
+        }
     }
 
-    private func handleSignIn() {
+    private var emailInputView: some View {
+        VStack(spacing: 16) {
+            Text("Enter your Katafract email address to receive a recovery code.")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+
+            TextField("Email", text: $email)
+                .keyboardType(.emailAddress)
+                .textContentType(.emailAddress)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .padding(12)
+                .background(Color.kfSurface)
+                .cornerRadius(8)
+                .padding()
+
+            Button(action: sendRecoveryEmail) {
+                if isLoading {
+                    ProgressView()
+                        .tint(Color.kataGold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                } else {
+                    Text("Send Recovery Code")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.kataGold)
+                        .foregroundStyle(.black)
+                        .font(.system(size: 16, weight: .semibold))
+                }
+            }
+            .disabled(isLoading || email.trimmingCharacters(in: .whitespaces).isEmpty)
+            .padding()
+        }
+    }
+
+    private var recoveryCodeView: some View {
+        VStack(spacing: 16) {
+            Text("A recovery code has been sent to \(email)")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+
+            TextField("Recovery Code", text: $recoveryCode)
+                .keyboardType(.default)
+                .textContentType(.oneTimeCode)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .padding(12)
+                .background(Color.kfSurface)
+                .cornerRadius(8)
+                .padding()
+
+            Button(action: redeemCode) {
+                if isLoading {
+                    ProgressView()
+                        .tint(Color.kataGold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                } else {
+                    Text("Restore Subscription")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.kataGold)
+                        .foregroundStyle(.black)
+                        .font(.system(size: 16, weight: .semibold))
+                }
+            }
+            .disabled(isLoading || recoveryCode.trimmingCharacters(in: .whitespaces).isEmpty)
+            .padding()
+
+            Button("Didn't receive a code? Send another") {
+                emailSent = false
+                recoveryCode = ""
+            }
+            .font(.system(size: 14, weight: .regular))
+            .foregroundStyle(Color.kataGold)
+        }
+    }
+
+    private func sendRecoveryEmail() {
         isLoading = true
-        // TODO(christian): Wire to existing AuthService.signIn() or new Sigil restore flow.
-        // For now, this is a stub that dismisses after simulating network delay.
-        Task {
-            try? await Task.sleep(for: .seconds(1))
+        errorMessage = nil
+
+        Task { @MainActor in
+            do {
+                _ = try await APIClient.shared.recoverByEmail(email.trimmingCharacters(in: .whitespaces))
+                emailSent = true
+                KataHaptic.tap.fire()
+            } catch {
+                errorMessage = "Failed to send recovery code: \(error.localizedDescription)"
+                showErrorAlert = true
+            }
             isLoading = false
-            dismiss()
+        }
+    }
+
+    private func redeemCode() {
+        isLoading = true
+        errorMessage = nil
+
+        Task { @MainActor in
+            do {
+                let tokenResponse = try await APIClient.shared.redeemRecoveryToken(recoveryCode.trimmingCharacters(in: .whitespaces))
+
+                // Save token to keychain
+                try? KeychainHelper.shared.save(tokenResponse.token, for: .subscriptionToken)
+                try? KeychainHelper.shared.save(tokenResponse.expiresAt, for: .tokenExpiresAt)
+                try? KeychainHelper.shared.save(tokenResponse.plan, for: .tokenPlan)
+                if tokenResponse.isFounder {
+                    try? KeychainHelper.shared.save("1", for: .tokenIsFounder)
+                }
+
+                KataHaptic.unlocked.fire()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    dismiss()
+                }
+            } catch {
+                errorMessage = "Recovery failed: \(error.localizedDescription)"
+                showErrorAlert = true
+            }
+            isLoading = false
         }
     }
 }
