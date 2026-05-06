@@ -42,27 +42,28 @@ enum WraithTier: Int, CaseIterable {
         switch self {
         case .haven:
             return [
-                "Ad & tracker blocking · 24/7",
-                "DoH DNS profile · all networks",
-                "Works on all apps",
+                "DNS blocking with OISD list",
+                "Ad & tracker protection 24/7",
+                "DoH profile for all networks",
                 "No account required"
             ]
         case .enclave:
             return [
                 "Everything in Haven",
                 "Single-hop WireGuard VPN",
-                "10 global WraithGate exit nodes",
-                "Kill switch · 5 devices",
+                "5 devices",
+                "Kill switch",
                 "DNS tier picker",
+                "ExifArmor, ParkArmor, DocArmor, SafeOpen unlocked",
                 "50 AI credits/month"
             ]
         case .sovereign:
             return [
                 "Everything in Enclave",
-                "Multi-hop routing (2 nodes)",
-                "Entry + exit node separation",
-                "1 TB Vaultyx storage",
+                "Multi-hop routing (entry + exit node separation)",
+                "1 TB Vaultyx encrypted storage",
                 "Cross-device sync",
+                "100 AI credits/month",
                 "Priority support"
             ]
         case .seats:
