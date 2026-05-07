@@ -1621,7 +1621,7 @@ final class WireGuardManager: ObservableObject {
             if appGroupDefaults?.bool(forKey: "hasConnectedOnce") != true {
                 appGroupDefaults?.set(true, forKey: "hasConnectedOnce")
                 Task {
-                    await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+                    try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
                 }
             }
 
