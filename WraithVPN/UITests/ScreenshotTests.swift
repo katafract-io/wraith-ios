@@ -127,6 +127,10 @@ final class WraithVPNScreenshotTests: XCTestCase {
         SnapshotHelper.setupSnapshot(app)
         app.launchArguments += flags
         app.launch()
+        XCTAssertTrue(
+            app.wait(for: .runningForeground, timeout: 30),
+            "App did not reach foreground within 30s — aborting to avoid silent 0-PNG run"
+        )
         return app
     }
 }
