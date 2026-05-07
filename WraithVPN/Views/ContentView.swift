@@ -35,7 +35,7 @@ struct ContentView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 18))
                 }
                 .transition(.opacity)
-            } else if !hasSeenOnboarding {
+            } else if !hasSeenOnboarding && !ScreenshotMode.skipOnboarding {
                 OnboardingView {
                     withAnimation(.easeInOut(duration: 0.4)) {
                         hasSeenOnboarding = true
