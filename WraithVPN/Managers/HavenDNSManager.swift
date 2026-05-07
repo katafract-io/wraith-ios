@@ -55,7 +55,10 @@ final class HavenDNSManager: ObservableObject {
 
     init() {
         preferences = Self.loadCachedPreferences()
-        Task { await refreshStatus() }
+        // NEDNSSettingsManager crashes/hangs in the iOS simulator — skip in screenshot mode.
+        if !ScreenshotMode.isActive {
+            Task { await refreshStatus() }
+        }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(serverDidChange),

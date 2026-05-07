@@ -153,7 +153,10 @@ final class WireGuardManager: ObservableObject {
             UserDefaults.standard.set(false, forKey: "simpleMode")
         }
 
-        managerLoadTask = Task { await loadOrCreateManager() }
+        // NETunnelProviderManager crashes/hangs in the iOS simulator — skip in screenshot mode.
+        if !ScreenshotMode.isActive {
+            managerLoadTask = Task { await loadOrCreateManager() }
+        }
         // Re-sync UI state whenever the app returns to the foreground.
         // NE may have reconnected the tunnel while the app was backgrounded/suspended;
         // this ensures connectedSince, status, and exitIP all reflect reality.
