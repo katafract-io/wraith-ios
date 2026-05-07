@@ -412,7 +412,7 @@ jobs:
           JWT=$(python3 ~/runner-env/asc-jwt.py)
           if [ -z "$JWT" ]; then echo "::warning::no ASC JWT, skipping internal-tester distribution"; exit 0; fi
           GROUPS=$(curl -s -H "Authorization: Bearer $JWT" "https://api.appstoreconnect.apple.com/v1/apps/$APP_ID/betaGroups?limit=50&fields[betaGroups]=name,isInternalGroup")
-          GROUP_ID=$(echo "$GROUPS" | python3 -c 'import sys,json;d=json.load(sys.stdin).get("data",[]); ids=[g["id"] for g in d if g["attributes"].get("isInternalGroup")]; print(ids[0] if ids else "")')
+          GROUP_ID=$(echo "$GROUPS" | python3 -c 'import sys,json;d=json.load(sys.stdin).get("data",[]); ids=[g["id"] for g in d if isinstance(g.get("attributes"), dict) and g["attributes"].get("isInternalGroup")]; print(ids[0] if ids else "")')
           if [ -z "$GROUP_ID" ]; then echo "::warning::no internal beta group; skipping"; exit 0; fi
           echo "internal_group_id=$GROUP_ID"
           BUILD_ID=""; STATE=""
