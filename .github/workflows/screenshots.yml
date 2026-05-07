@@ -19,7 +19,7 @@ jobs:
   regenerate:
     name: Capture + upload screenshots
     runs-on: [ self-hosted, macOS, ios-build ]
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     env:
       APP_NAME: wraith
@@ -149,7 +149,7 @@ jobs:
       - name: Collect artifacts
         if: always()
         run: |
-          mkdir -p /tmp/screenshot-artifacts
+          rm -rf /tmp/screenshot-artifacts && mkdir -p /tmp/screenshot-artifacts
           cp -r fastlane/screenshots /tmp/screenshot-artifacts/ 2>/dev/null || true
           LOG="${{ steps.fastlane.outputs.fastlane_log }}"
           [ -f "$LOG" ] && tail -80 "$LOG" > /tmp/screenshot-artifacts/fastlane.tail.log || true
@@ -178,7 +178,7 @@ jobs:
           mkdir -p "$LOG_DIR/runbooks/screenshot_runs"
           LOG_FILE="$LOG_DIR/runbooks/screenshot_runs/${APP_NAME}_${TS}.md"
           SHOT_COUNT="${{ steps.fastlane.outputs.shot_count }}"
-          TAIL=$(tail -50 /tmp/fastlane.log 2>/dev/null | sed 's/\`/\\\`/g')
+          TAIL=$(tail -50 "/tmp/fastlane-${APP_NAME}-${{ github.run_id }}.log" 2>/dev/null | sed 's/\`/\\\`/g')
           cat > "$LOG_FILE" <<LOG_EOF
           # ${APP_NAME} screenshot run — ${TS}
 
