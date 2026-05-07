@@ -124,7 +124,7 @@ final class WraithVPNScreenshotTests: XCTestCase {
 
     private func launch(flags: [String]) -> XCUIApplication {
         let app = XCUIApplication()
-        SnapshotHelper.setupSnapshot(app)
+        setupSnapshot(app)
         app.launchArguments += flags
         app.launch()
         XCTAssertTrue(
