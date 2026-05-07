@@ -99,9 +99,6 @@ final class WireGuardManager: ObservableObject {
     /// Resets to 0 on successful handshake or manual disconnect.
     private var reprovisionAttempts = 0
     private let maxReprovisionAttempts = 2
-    /// Tracks whether the user explicitly requested disconnect; used to distinguish
-    /// user-initiated disconnects from NE-side errors via lastTunnelError.
-    private var userInitiatedDisconnect = false
     /// Holds the current post-connect health check task so a rapid
     /// connect/disconnect/connect cycle cancels the stale check and only
     /// the most-recent stable connect runs the full suite.
@@ -1465,23 +1462,6 @@ final class WireGuardManager: ObservableObject {
         ]
         proto.includeAllNetworks = (tunnelMode == .full)
         proto.excludeLocalNetworks = true
-
-        // WP-A: BypassTunnelClient — exclude Katafract API IPs from tunnel
-        // so provisioning requests always reach api.katafract.com via physical interface
-        let apiSettings = NEIPv4Settings(addresses: ["0.0.0.0"], subnetMasks: ["0.0.0.0"])
-        apiSettings.isEnabled = true
-
-        // Exclude api.katafract.com IPs (188.114.96.0 and 188.114.97.0)
-        let apiRoute1 = NEIPv4Route.default()
-        apiRoute1.destinationAddress = "188.114.96.0"
-        apiRoute1.destinationSubnetMask = "255.255.255.0"
-
-        let apiRoute2 = NEIPv4Route.default()
-        apiRoute2.destinationAddress = "188.114.97.0"
-        apiRoute2.destinationSubnetMask = "255.255.255.0"
-
-        apiSettings.excludedRoutes = [apiRoute1, apiRoute2]
-        proto.ipv4Settings = apiSettings
 
         mgr.protocolConfiguration = proto
         mgr.localizedDescription = "WraithVPN — \(server.cityName)"
