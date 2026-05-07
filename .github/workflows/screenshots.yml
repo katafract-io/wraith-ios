@@ -18,8 +18,8 @@ concurrency:
 jobs:
   regenerate:
     name: Capture + upload screenshots
-    runs-on: [ self-hosted, macOS, ios-build, ARM64 ]
-    timeout-minutes: 30
+    runs-on: [ self-hosted, macOS, ios-build ]
+    timeout-minutes: 45
 
     env:
       APP_NAME: wraith
@@ -80,7 +80,7 @@ jobs:
           fi
 
       - name: Reset vendor/bundle (avoid stale bundler cache)
-        run: rm -rf vendor/bundle
+        run: echo "vendor/bundle retained for cache warmth — remove this step only if gem corruption suspected"
 
       - name: Install Ruby deps (Ruby 3.3.x via rbenv or system)
         run: |
@@ -141,15 +141,18 @@ jobs:
           fi
           export PATH="$(dirname "$RUBY_BIN"):$PATH"
           rm -rf fastlane/screenshots
-          $RUBY_BIN -S bundle exec fastlane ${FASTLANE_LANE} 2>&1 | tee /tmp/fastlane.log | tail -80
+          FASTLANE_LOG="/tmp/fastlane-${APP_NAME}-${{ github.run_id }}.log"
+          $RUBY_BIN -S bundle exec fastlane ${FASTLANE_LANE} 2>&1 | tee "$FASTLANE_LOG" | tail -80
           echo "shot_count=$(find fastlane/screenshots -name '*.png' 2>/dev/null | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "fastlane_log=$FASTLANE_LOG" >> "$GITHUB_OUTPUT"
 
       - name: Collect artifacts
         if: always()
         run: |
           mkdir -p /tmp/screenshot-artifacts
           cp -r fastlane/screenshots /tmp/screenshot-artifacts/ 2>/dev/null || true
-          tail -50 /tmp/fastlane.log > /tmp/screenshot-artifacts/fastlane.tail.log 2>/dev/null || true
+          LOG="${{ steps.fastlane.outputs.fastlane_log }}"
+          [ -f "$LOG" ] && tail -80 "$LOG" > /tmp/screenshot-artifacts/fastlane.tail.log || true
 
       - name: Upload artifacts
         if: always()

@@ -21,5 +21,9 @@ launch_arguments([
   "--screenshots --skip-onboarding",
 ])
 
+# Pin to match runner's installed runtime — without this fastlane picks
+# 26.4 when both 26.4 and 26.4.1 are installed and the simulators don't match.
+ios_version("26.4.1")
+
 skip_open_summary(true)
 concurrent_simulators(true)
